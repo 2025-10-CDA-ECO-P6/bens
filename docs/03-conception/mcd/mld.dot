@@ -1,0 +1,140 @@
+digraph MLD_BENS {
+    graph [
+        label="MLD — BENS Middleware (US 1.2)\nPK UUID · FK · contraintes UNIQUE · captation de valeur (SECONDARY_SALES)"
+        labelloc=t
+        fontsize=16
+        fontname="Helvetica"
+        bgcolor="#0f1419"
+        pad=0.4
+        rankdir=TB
+        splines=ortho
+        nodesep=0.5
+        ranksep=0.8
+    ];
+    node [
+        shape=plain
+        fontname="Helvetica"
+        fontsize=10
+    ];
+    edge [
+        color="#58a6ff"
+        fontcolor="#c9d1d9"
+        fontname="Helvetica"
+        fontsize=9
+        arrowsize=0.7
+    ];
+
+    MERCHANTS [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>MERCHANTS</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">name VARCHAR</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">api_key_hash</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">webhook_secret_hash</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">created_at TIMESTAMPTZ</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    COLLABORATORS [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>COLLABORATORS</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">merchant_id → MERCHANTS</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">email</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">password_hash · role · is_active</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">created_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    BLACKLISTED_IPS [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>BLACKLISTED_IPS</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">merchant_id → MERCHANTS</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">(merchant_id, ip_address)</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">reason · created_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    EVENT_BRIDGES [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>EVENT_BRIDGES</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">merchant_id → MERCHANTS</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">(merchant_id, external_event_id)</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">smart_contract_address · status</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">created_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    EVENT_SMART_RULES [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>EVENT_SMART_RULES</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK·UK</FONT> <FONT COLOR="#e6edf3">event_bridge_id (1:1)</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">token_type · allow_secondary_market</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">max_resale_price_percent DECIMAL</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">royalty_fee_percent DECIMAL</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">max_tickets_per_user</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    TRANSACTION_AUDIT_LOGS [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#3d8bfd" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#e6edf3"><B>TRANSACTION_AUDIT_LOGS</B></FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">event_bridge_id</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">payment_provider_ref</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">external_seat_id · customer_email</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">status · blockchain_tx_hash</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">created_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    SECONDARY_SALES [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#f0883e" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#3d2a1a" ALIGN="CENTER"><FONT COLOR="#ffd29b"><B>SECONDARY_SALES</B> (captation)</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">event_bridge_id</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">external_seat_id</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">resale_price DECIMAL</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffd29b">royalty_amount DECIMAL</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#ffa657">UK</FONT> <FONT COLOR="#e6edf3">blockchain_tx_hash</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">created_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    WEBHOOK_DISPATCHES [
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" COLOR="#6e7681" BGCOLOR="#1a2332">
+                <TR><TD BGCOLOR="#243044" ALIGN="CENTER"><FONT COLOR="#8b949e"><B>WEBHOOK_DISPATCHES</B> (technique)</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#7ee787">PK</FONT> <FONT COLOR="#e6edf3">id UUID</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#79c0ff">FK</FONT> <FONT COLOR="#e6edf3">transaction_id</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">target_url · payload JSONB</FONT></TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#e6edf3">status · retry_count · updated_at</FONT></TD></TR>
+            </TABLE>
+        >
+    ];
+
+    MERCHANTS -> COLLABORATORS [xlabel="1:N"];
+    MERCHANTS -> BLACKLISTED_IPS [xlabel="1:N"];
+    MERCHANTS -> EVENT_BRIDGES [xlabel="1:N"];
+    EVENT_BRIDGES -> EVENT_SMART_RULES [xlabel="1:1"];
+    EVENT_BRIDGES -> TRANSACTION_AUDIT_LOGS [xlabel="1:N"];
+    EVENT_BRIDGES -> SECONDARY_SALES [xlabel="1:N"];
+    TRANSACTION_AUDIT_LOGS -> WEBHOOK_DISPATCHES [xlabel="1:N"];
+}

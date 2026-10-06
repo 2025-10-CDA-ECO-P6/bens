@@ -1,0 +1,126 @@
+digraph MCD_BENS {
+    graph [
+        label="MCD — BENS Middleware (US 1.2)\nMode Stateless · captation de valeur sur le marché secondaire"
+        labelloc=t
+        fontsize=16
+        fontname="Helvetica"
+        bgcolor="#0f1419"
+        pad=0.4
+        rankdir=TB
+        splines=true
+        nodesep=0.6
+        ranksep=0.9
+    ];
+    node [
+        shape=box
+        style="filled,rounded"
+        fillcolor="#1a2332"
+        color="#3d8bfd"
+        fontcolor="#e6edf3"
+        fontname="Helvetica"
+        fontsize=11
+        margin="0.25,0.15"
+    ];
+    edge [
+        color="#8b949e"
+        fontcolor="#c9d1d9"
+        fontname="Helvetica"
+        fontsize=10
+    ];
+
+    Merchant [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>Merchant</B></TD></TR>
+                <TR><TD ALIGN="LEFT">nom</TD></TR>
+                <TR><TD ALIGN="LEFT">cleApiHash</TD></TR>
+                <TR><TD ALIGN="LEFT">webhookSecretHash</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Collaborator [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>Collaborator</B></TD></TR>
+                <TR><TD ALIGN="LEFT">email</TD></TR>
+                <TR><TD ALIGN="LEFT">motDePasseHash</TD></TR>
+                <TR><TD ALIGN="LEFT">role</TD></TR>
+                <TR><TD ALIGN="LEFT">actif</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    BlacklistedIp [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>BlacklistedIp</B></TD></TR>
+                <TR><TD ALIGN="LEFT">adresseIp</TD></TR>
+                <TR><TD ALIGN="LEFT">motif</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    EventBridge [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>EventBridge</B></TD></TR>
+                <TR><TD ALIGN="LEFT">idEvenementExterne</TD></TR>
+                <TR><TD ALIGN="LEFT">adresseSmartContract</TD></TR>
+                <TR><TD ALIGN="LEFT">statut</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    EventSmartRules [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>EventSmartRules</B></TD></TR>
+                <TR><TD ALIGN="LEFT">typeToken</TD></TR>
+                <TR><TD ALIGN="LEFT">reventeAutorisee</TD></TR>
+                <TR><TD ALIGN="LEFT">prixReventeMaxPercent</TD></TR>
+                <TR><TD ALIGN="LEFT">tauxRoyaltiesPercent</TD></TR>
+                <TR><TD ALIGN="LEFT">limiteTicketsParUtilisateur</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    TransactionAuditLog [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>TransactionAuditLog</B></TD></TR>
+                <TR><TD ALIGN="LEFT">idSiegeExterne</TD></TR>
+                <TR><TD ALIGN="LEFT">emailClient</TD></TR>
+                <TR><TD ALIGN="LEFT">referencePaiement</TD></TR>
+                <TR><TD ALIGN="LEFT">statutMint</TD></TR>
+                <TR><TD ALIGN="LEFT">hashTxBlockchain</TD></TR>
+                <TR><TD ALIGN="LEFT">dateCreation</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    SecondarySale [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD><B>SecondarySale</B></TD></TR>
+                <TR><TD ALIGN="LEFT">idSiegeExterne</TD></TR>
+                <TR><TD ALIGN="LEFT">prixRevente</TD></TR>
+                <TR><TD ALIGN="LEFT">montantRoyalty</TD></TR>
+                <TR><TD ALIGN="LEFT">hashTxBlockchain</TD></TR>
+                <TR><TD ALIGN="LEFT">dateRevente</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Merchant -> Collaborator      [label="Appartenir\n(1,N) —— (1,1)"];
+    Merchant -> BlacklistedIp     [label="Restreindre\n(0,N) —— (1,1)"];
+    Merchant -> EventBridge       [label="Bridger\n(1,N) —— (1,1)"];
+    EventBridge -> EventSmartRules     [label="Régir (1:1)\n(1,1) —— (1,1)"];
+    EventBridge -> TransactionAuditLog [label="Tracer\n(0,N) —— (1,1)"];
+    EventBridge -> SecondarySale       [label="Capturer\n(0,N) —— (1,1)"];
+}
