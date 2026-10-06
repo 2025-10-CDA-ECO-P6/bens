@@ -76,10 +76,10 @@ BENS **ne doit pas** :
 
 | Couche | Technologie | Version / contrainte |
 | :--- | :--- | :--- |
-| Langage backend | **Java** | **21** (LTS) — Virtual Threads (Project Loom) |
-| Framework backend | **Spring Boot** | **3.4+** |
+| Langage backend | **Java** | **25** (LTS) — Virtual Threads (Project Loom) |
+| Framework backend | **Spring Boot** | **4+** |
 | Frontend dashboard | **Angular** | **18+** |
-| Blockchain | **MultiversX** | Smart Contracts + Account Abstraction (Paymaster) |
+| Blockchain | **MultiversX** / **Rust** | Smart Contracts + Account Abstraction (Paymaster) |
 | Cache / verrous | **Redis** | Cluster + scripts Lua atomiques |
 | Broker de messages | **RabbitMQ** | Exchange topic + DLQ |
 | Base relationnelle | **PostgreSQL** | Audit, config bridges, webhooks (UUID PK) |
