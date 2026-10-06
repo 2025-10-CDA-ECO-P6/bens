@@ -5,15 +5,22 @@
 > **Vision produit** — Document de présentation externe et soutenance CDA.
 > Source de vérité technique : [`cahier-des-charges.md`](./cahier-des-charges.md).
 
-Middleware de billetterie forte charge : **Anti-Scalping**, **Anti-Crash** et **Gouvernance**.
+**Le middleware qui rend au marché secondaire sa valeur aux organisateurs.**
 
 ## Présentation
 
-**Bens** est une solution middleware conçue pour s'intégrer entre les
-plateformes de billetterie traditionnelles (Digitick, Ticketmaster, etc.) et
-l'infrastructure blockchain MultiversX. Le système permet de déporter la
-charge transactionnelle lors des pics de vente, de certifier le billet sur
-chaîne et de sécuriser le marché secondaire.
+Aujourd'hui, une part significative des billets des grands événements finit
+sur le marché secondaire, revendus à plusieurs fois leur prix facial. Toute
+cette valeur échappe à l'organisateur : elle part aux scalpers et aux
+plateformes de revente (Viagogo, StubHub…). En Web2, c'est une limite
+**structurelle** — une fois le billet vendu, l'organisateur perd tout levier
+sur les reventes ultérieures.
+
+**Bens** est un middleware qui s'intègre entre les billetteries
+traditionnelles (Digitick, Ticketmaster, etc.) et la blockchain MultiversX.
+Il permet à un organisateur, pour la première fois, de **capter une part de
+chaque revente** en ancrant des royalties dans un smart contract immuable —
+à perpétuité, automatiquement, sans intervention humaine.
 
 > **Discipline middleware** : BENS est un *transmetteur de messages* et un
 > *forgeur de NFT/SBT*. Il **n'est jamais une billetterie bis** : catalogue,
@@ -23,16 +30,17 @@ chaîne et de sécuriser le marché secondaire.
 
 ### Objectifs principaux
 
-- **Disponibilité (Anti-Crash)** : verrouillage des sièges **en mémoire Redis**
-  (scripts Lua atomiques) pour absorber les pics de requêtes sans solliciter
-  la base SQL du partenaire. Le mint est asynchrone et non bloquant pour
-  l'achat en euros.
-- **Équité (Anti-Scalp)** : règles de revente ancrées dans le smart contract
-  (plafond de prix, royalties, limite par utilisateur) et billet
-  **non transférable** (Soulbound Token) optionnel, au choix de l'organisateur.
-- **Contrôle (Gouvernance)** : gestion du cycle de vie du billet NFT via un
-  dashboard organisateur (RBAC) qui configure le *bridge* d'événement et
-  déploie le smart contract sur MultiversX.
+- **Captation de valeur (argument n°1)** : chaque revente génère
+  automatiquement une royalty créditée à l'organisateur via le smart
+  contract. L'organisateur transforme le marché secondaire, aujourd'hui
+  valeur perdue, en **revenu récurrent**.
+- **Gouvernance du marché secondaire** : plafond de prix de revente, SBT non
+  transférable optionnel, limite par utilisateur, anti-bot — l'organisateur
+  reprend le contrôle d'un marché qui lui échappait.
+- **Anti-Crash (enableur technique, "le plus")** : verrouillage des sièges
+  **en mémoire Redis** (scripts Lua atomiques) pour absorber les pics de
+  vente sans solliciter la base SQL du partenaire. Indispensable pour que le
+  système tienne la charge — mais ce n'est pas l'argument produit principal.
 
 ---
 
@@ -55,7 +63,8 @@ partenaire et orchestre la certification.
   partenaire (HMAC), écrit l'audit `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`),
   puis **orchestre** le mint en appelant Bens Contracts.
 - **Dashboard organisateur (Angular 18+)** : configuration des bridges,
-  déploiement du smart contract, suivi des transactions, RBAC
+  déploiement du smart contract, suivi des transactions et **suivi des
+  royalties perçues** sur le marché secondaire, RBAC
   (Merchant ↔ `ORGANIZATIONS`, Collaborator ↔ `USERS`).
 - **QR Code statique** (scope POC SF-07) : billet certifié consultable côté
   acheteur final.
@@ -63,10 +72,15 @@ partenaire et orchestre la certification.
 ### Bens Contracts (Rust / MultiversX)
 
 La logique métier immuable exécutée sur la blockchain, et la couche
-d'abstraction Web3.
+d'abstraction Web3 — **cœur de la captation de valeur**.
 
 - **Déploiement des Smart Contracts** : crée et déploie le SC d'événement
   sur MultiversX, stocke les IDs/adresses en base (`EVENT_BRIDGES`).
+- **Smart Governance (royalties + plafond)** : à chaque revente, le SC
+  calcule et crédite automatiquement la royalty à l'organisateur, vérifie le
+  plafond de prix, applique `max_tickets_per_user` et le mode SBT si
+  activé. **C'est ici que la valeur du marché secondaire est captée** —
+  sans action manuelle, à perpétuité.
 - **Paymaster & Signer** : service de méta-transactions qui signe et paie
   les frais réseau sur MultiversX (Account Abstraction), offrant une
   expérience transparente — pas de fenêtre MetaMask, pas de manipulation de
@@ -75,9 +89,6 @@ d'abstraction Web3.
   sur MultiversX. Les métadonnées du token ne contiennent que l'identifiant
   opaque `external_seat_id` fourni par le partenaire — **jamais** `section`,
   `row` ou `seat_number` (discipline middleware).
-- **Smart Governance** : application automatique des règles de revente
-  définies par l'organisateur (`max_resale_price_percent`,
-  `royalty_fee_percent`, `max_tickets_per_user`, `allow_secondary_market`).
 - **Smart Wallet acheteur** : création de wallet via email/téléphone (xPortal),
   masquée derrière le Paymaster.
 
@@ -86,7 +97,9 @@ d'abstraction Web3.
 Le cœur de la **réconciliation** Web2 ↔ Web3 — et uniquement cela.
 
 - **Écouteur blockchain** : détecte les événements MultiversX (Mint,
-  Transfer) et rapproche l'état on-chain avec les `TRANSACTION_AUDIT_LOGS`.
+  Transfer, Resale) et rapproche l'état on-chain avec les
+  `TRANSACTION_AUDIT_LOGS`. Les reventes sont ainsi tracées et reportées au
+  dashboard organisateur (royalties perçues).
 - **RabbitMQ Message Broker** : les succès de transactions MultiversX sont
   empilés dans la queue `bens.webhook.outbox` (exchange topic `bens.mint`,
   routing key `mint.{org_id}.{event_id}`, DLQ persistante).
@@ -117,6 +130,10 @@ Bens Core ordonne alors à Bens Contracts de **déployer le SC** sur MultiversX
 et génère les clés API + l'URL de webhook de callback. États du bridge :
 `DRAFT → ACTIVE → PAUSED → ARCHIVED`.
 
+> **Choix de captation** : l'organisateur décide ici du % de royalty qu'il
+> captera sur chaque revente. Une fois le SC déployé, ce taux est immuable
+> sur la chaîne — il ne peut pas être contourné.
+
 ### 2. Phase de Vente (Rush)
 
 Le fan sélectionne sa place sur l'interface partenaire. Le partenaire appelle
@@ -139,6 +156,21 @@ dans RabbitMQ (`bens.webhook.outbox`). Le worker de synchronisation traite
 ces messages pour confirmer la vente au partenaire via webhook HMAC, à un
 rythme contrôlé (~200 confirmations/s), garantissant une mise à jour stable
 et fluide de leur base de données.
+
+### 4. Revente sur le marché secondaire (valeur captée)
+
+Lorsqu'un billet NFT est revendu, le smart contract Bens Contracts
+**applique automatiquement** :
+
+1. la vérification du plafond de prix (`max_resale_price_percent`) ;
+2. le calcul de la royalty (`royalty_fee_percent` × prix de revente) ;
+3. le crédit automatique de la royalty à l'organisateur ;
+4. la vérification `max_tickets_per_user` (anti-bot) ;
+5. si le billet est SBT, le blocage de la revente.
+
+Bens Bridge détecte l'événement on-chain `Resale`, l'audite, et le reporte au
+dashboard organisateur. **L'organisateur voit ses royalties s'accumuler en
+temps réel** — valeur qui, sans BENS, serait partie aux scalpers.
 
 ---
 
@@ -164,10 +196,20 @@ et fluide de leur base de données.
 
 ## Pourquoi MultiversX ?
 
-Le choix de l'infrastructure MultiversX est déterminant pour répondre aux
-exigences de performance d'une billetterie mondiale. Contrairement aux
-blockchains traditionnelles, MultiversX offre des spécificités techniques qui
-servent directement les objectifs de Bens.
+Le choix de l'infrastructure MultiversX est déterminant pour deux raisons :
+**l'immuabilité des règles de captation de valeur** (le cœur du pitch) et la
+**performance** (l'enableur Anti-Crash). Contrairement aux blockchains
+traditionnelles, MultiversX offre des spécificités techniques qui servent
+directement les objectifs de Bens.
+
+### Immuabilité et captation de valeur (argument n°1)
+
+Les royalties et le plafond de revente sont ancrés dans un smart contract
+MultiversX **immuable**. Une fois déployé, aucun intermédiaire — ni plateforme
+de revente, ni scalper, ni même l'organisateur — ne peut contourner ces
+règles. C'est précisément ce qui rend la captation de valeur possible :
+là où un système Web2 peut être contourné (revente hors plateforme), le SC
+exécute la royalty à chaque transfer de token, sans exception.
 
 ### Scalabilité et Performance (Adaptive State Sharding)
 

@@ -11,17 +11,19 @@
 
 Les billetteries B2B partenaires (Ticketmaster, Digitick, Fnac Spectacles, etc.) gèrent déjà le catalogue d'événements, le plan de salle, le panier et le paiement en euros. Elles ont besoin d'une couche d'interopérabilité pour :
 
-1. **Absorber les pics de charge** (drops) sans saturer leur BDD SQL.
-2. **Certifier le billet** sur blockchain (MultiversX) de façon transparente pour l'acheteur final.
-3. **Ancrer les règles de revente** (plafond, royalties, SBT) dans un smart contract, sans exposer la complexité Web3 aux équipes partenaires.
+1. **Capter la valeur du marché secondaire** : ancrer des royalties de revente dans un smart contract MultiversX afin que l'organisateur capte automatiquement une part de chaque revente, à perpétuité — valeur structurellement inaccessible en Web2 (part aujourd'hui aux scalpers et plateformes de revente).
+2. **Gouverner le marché secondaire** : plafond de prix, SBT non transférable optionnel, limite par utilisateur, anti-bot — l'organisateur reprend le contrôle.
+3. **Certifier le billet** sur blockchain (MultiversX) de façon transparente pour l'acheteur final.
+4. **Absorber les pics de charge** (drops) sans saturer leur BDD SQL — enableur technique, non l'argument produit principal.
 
 ### 0.2. Objectif produit
 
 BENS (Blockchain Event Network System) est un **middleware API-First, stateless, event-driven** qui :
 
+- ancre les règles de revente (plafond, royalties, SBT) dans un smart contract MultiversX déployé via Bens Contracts, et paie les gas fees via Paymaster (Account Abstraction) ;
 - verrouille des sièges **en mémoire** (Redis + Lua) à partir d'identifiants opaques fournis par le partenaire ;
-- reçoit la confirmation de paiement € via webhook, l'audite, et publie un ordre de mint asynchrone ;
-- forge un NFT/SBT sur MultiversX via Paymaster (Account Abstraction) ;
+- reçoit la confirmation de paiement € via webhook, l'audite, et ordonne le mint asynchrone ;
+- forge un NFT/SBT sur MultiversX via Bens Contracts (Paymaster) ;
 - réconcilie le partenaire via webhook sortant signé HMAC ;
 - expose un dashboard organisateur pour configurer un *bridge* d'événement et déployer le smart contract.
 
@@ -171,7 +173,7 @@ sequenceDiagram
 1. Connexion Dashboard BENS (RBAC)
 2. Création d'un Bridge d'événement
 3. Saisie de external_event_id (opaque)
-4. Configuration EVENT_SMART_RULES :
+4. Configuration EventContractConfig (`EVENT_CONTRACT_CONFIGS`) :
    • token_type = NFT | SBT
    • max_resale_price_percent (BigDecimal)
    • royalty_fee_percent (BigDecimal)
@@ -243,14 +245,14 @@ return 1    -- → 200 OK
 
 | ID | Intitulé | Critère mesurable | Composant | Table MLD |
 | :--- | :--- | :--- | :--- | :--- |
-| **SF-09** | Règles de revente | Plafond prix + royalties configurables | BENS Contracts (SC) | `EVENT_SMART_RULES` |
-| **SF-10** | SBT intransférables (optionnel) | Forçage SBT possible par organisateur | BENS Contracts (SC) | `EVENT_SMART_RULES` |
+| **SF-09** | Règles de revente | Plafond prix + royalties configurables | BENS Contracts (SC) | `EVENT_CONTRACT_CONFIGS` |
+| **SF-10** | SBT intransférables (optionnel) | Forçage SBT possible par organisateur | BENS Contracts (SC) | `EVENT_CONTRACT_CONFIGS` |
 
 #### 3.3.1. Règles de calcul des royalties B2B (`BigDecimal`)
 
 Tous les pourcentages monétaires sont des **`DECIMAL(5,2)` / `BigDecimal`** (jamais `float` / `double`) pour éviter les erreurs d'arrondi.
 
-| Colonne MLD (`EVENT_SMART_RULES`) | Type | Domaine | Rôle |
+| Colonne MLD (`EVENT_CONTRACT_CONFIGS`) | Type | Domaine | Rôle |
 | :--- | :--- | :--- | :--- |
 | `max_resale_price_percent` | `DECIMAL(5,2)` | `0.00` → `200.00` | Plafond de revente (% du prix facial) |
 | `royalty_fee_percent` | `DECIMAL(5,2)` | `0.00` → `50.00` | Royalties organisateur (% du prix de revente) |
@@ -311,14 +313,14 @@ Flux de revente : vérification plafond → paiement → réémission billet (bu
 
 Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/mld.md`) :
 
-| Table | Rôle |
-| :--- | :--- |
-| `ORGANIZATIONS` | Partenaires B2B |
-| `USERS` | Accès dashboard (RBAC) |
-| `EVENT_BRIDGES` | Mapping `external_event_id` ↔ instance Web3 |
-| `EVENT_SMART_RULES` | Règles SC (1:1 avec bridge) |
-| `TRANSACTION_AUDIT_LOGS` | Audit paiement → mint |
-| `WEBHOOK_DISPATCHES` | File + retries webhooks sortants |
+| Table MLD | Entité MCD | Rôle |
+| :--- | :--- | :--- |
+| `MERCHANTS` | Merchant | Partenaires B2B |
+| `COLLABORATORS` | Collaborator | Accès dashboard (RBAC) |
+| `BLACKLISTED_IPS` | BlacklistedIp | Ban IP multi-tenant |
+| `EVENT_CONTRACT_CONFIGS` | EventContractConfig | Bridge événement + règles SC |
+| `TRANSACTION_AUDIT_LOGS` | TransactionAuditLog | Audit paiement → mint |
+| `WEBHOOK_DISPATCHES` | *(technique)* | File + retries webhooks sortants |
 
 **Aucune** table `events`, `seats`, `categories`, `prices`, `orders` côté BENS.
 
