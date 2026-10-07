@@ -1,6 +1,7 @@
 # Cahier des Charges Fonctionnel et Technique — Projet BENS
 
 > **Référence US 1.1** — Documenter l'Expression du Besoin et l'Architecture distribuée  
+> **Architecture détaillée** : [`docs/03-conception/architecture.md`](../03-conception/architecture.md) (US 1.7)  
 > **Principe transverse** : BENS est un *middleware* transmetteur de messages et forgeur de NFT/SBT — **jamais une billetterie bis**. La donnée métier billetterie (catalogue, sièges, prix, panier, checkout) reste chez le partenaire Web2.
 
 ---
@@ -53,26 +54,29 @@ BENS **ne doit pas** :
 ### 1.1. Vue d'ensemble
 
 ```text
-┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│     BENS Core       │     │   BENS Contracts     │     │    BENS Bridge      │
-│  (orchestration     │     │  (smart contracts    │     │  (réconciliation    │
-│   API + Redis +     │◄───►│   MultiversX +       │◄───►│   Web2 ↔ Web3       │
-│   Dashboard Angular)│     │   Paymaster)         │     │   RabbitMQ + worker)│
-└──────────▲──────────┘     └──────────────────────┘     └──────────▲──────────┘
-           │                                                         │
-           │  lock / unlock / QR / config                            │  webhooks
-           │                                                         │
-    ┌──────┴──────┐                                           ┌──────┴──────┐
-    │ Partenaire  │                                           │ Partenaire  │
-    │ Web2 (API)  │                                           │ Web2 (WH)   │
-    └─────────────┘                                           └─────────────┘
+┌──────────────────────┐   mint / deploy    ┌──────────────────────┐
+│      BensCore        │ ─────────────────► │    BensContract      │
+│  API + Redis + Audit │                    │  SC + Paymaster      │
+│  + MintOrchestrator  │                    │  + Web3 Gateway      │
+│  + Dashboard Angular │                    └──────────▲───────────┘
+└──────────▲───────────┘                               │ on-chain
+           │                                           │
+           │ lock / unlock / payment WH / QR           │
+           │                                           │
+    ┌──────┴──────┐                         ┌──────────┴───────────┐
+    │ Partenaire  │ ◄── webhooks sortants ──│     BensBridge       │
+    │ Web2        │         HMAC            │  réconciliation only │
+    └─────────────┘                         │  RabbitMQ outbox     │
+                                            └──────────────────────┘
 ```
 
 | Microservice | Responsabilité | Persistance |
 | :--- | :--- | :--- |
-| **BENS Core** | API publique partenaire (`/seats/lock`, `/seats/unlock`, statut), verrou Redis Lua, QR dynamique, dashboard organisateur (RBAC), configuration des bridges | PostgreSQL (config middleware) + Redis (verrous) |
-| **BENS Contracts** | Déploiement et exécution des smart contracts MultiversX, Paymaster (gas fees), règles ancrées (plafond, royalties, SBT) | Blockchain MultiversX |
-| **BENS Bridge** | Webhooks entrants (paiement), audit logs, publication RabbitMQ, worker de mint, webhooks sortants de réconciliation, replay | PostgreSQL (`TRANSACTION_AUDIT_LOGS`, `WEBHOOK_DISPATCHES`) + RabbitMQ |
+| **BensCore** | API partenaire (`/seats/lock`, `/seats/unlock`, statut), verrou Redis Lua, **réception webhook paiement**, **écriture/maj audit** (`PENDING_MINT` → `MINTED`), **orchestration du mint** (appelle BensContract), dashboard organisateur (RBAC), QR **statique** (POC) | PostgreSQL (config + audit) + Redis (verrous) |
+| **BensContract** | Création/déploiement SC MultiversX, stockage adresse SC dans `EVENT_BRIDGES`, mint on-chain, Paymaster (gas fees), Smart Wallet, Web3 Gateway, règles ancrées (plafond, royalties, SBT) | PostgreSQL (adresses SC) + MultiversX |
+| **BensBridge** | **Réconciliation uniquement** : écouteur blockchain, rapprochement on-chain ↔ audit / `SECONDARY_SALES`, RabbitMQ outbox, webhooks sortants HMAC, retries/DLQ, ReplayWorker (à définir) | PostgreSQL (`SECONDARY_SALES`, `WEBHOOK_DISPATCHES`) + RabbitMQ |
+
+> **Décisions actées** : BensCore reçoit le paiement et écrit l'audit ; BensCore appelle BensContract pour minter (**pas de RabbitMQ pour le mint**) ; BensBridge ne fait que la réconciliation/notification.
 
 ### 1.2. Stack technique complète
 
@@ -95,11 +99,11 @@ Surface volontairement contractée — **pas plus** :
 
 | Endpoint | Rôle | Composant |
 | :--- | :--- | :--- |
-| `POST /seats/lock` | Verrouiller un siège (`event_id`, `seat_id`, `session_id`) → `200` + TTL ou `409` | BENS Core |
-| `POST /seats/unlock` | Libérer un siège (compare-and-delete) | BENS Core |
-| `POST /webhooks/payment` | Webhook paiement confirmé (signé HMAC) → `202 Accepted` | BENS Bridge |
-| `GET /transactions/{id}` | Statut d'une transaction d'audit | BENS Bridge / Core |
-| Dashboard organisateur | Configurer bridge + déployer SC | BENS Core (Angular) |
+| `POST /seats/lock` | Verrouiller un siège (`event_id`, `external_seat_id`, `session_id`) → `200` + TTL ou `409` | BensCore |
+| `POST /seats/unlock` | Libérer un siège (compare-and-delete) | BensCore |
+| `POST /webhooks/payment` | Webhook paiement confirmé (signé HMAC) → `202 Accepted` | **BensCore** |
+| `GET /transactions/{id}` | Statut d'une transaction d'audit | BensCore |
+| Dashboard organisateur | Configurer bridge + déployer SC + suivre royalties | BensCore (Angular) |
 
 Codes d'erreur explicites : `SEAT_ALREADY_LOCKED`, `SEAT_SOLD`, `MAX_TICKETS_REACHED`, `INVALID_SIGNATURE`, etc.
 
@@ -112,22 +116,26 @@ Identifiants :
 
 ## 2. Diagramme de séquence inter-services
 
-### 2.1. Achat + certification (Core ↔ Bridge ↔ Contracts)
+### 2.1. Achat + certification (Core → Contracts → Bridge)
+
+> Aligné sur [`architecture.md`](../03-conception/architecture.md) : BensCore
+> reçoit le paiement, orchestre le mint ; BensBridge réconcilie et notifie.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Acheteur
     participant Web2 as Partenaire Web2
-    participant Core as BENS Core
+    participant Core as BensCore
     participant Redis as Redis (Lua)
-    participant Bridge as BENS Bridge
-    participant MQ as RabbitMQ
-    participant SC as BENS Contracts<br/>(MultiversX + Paymaster)
     participant PG as PostgreSQL
+    participant Contract as BensContract<br/>(Paymaster)
+    participant MX as MultiversX
+    participant Bridge as BensBridge
+    participant MQ as RabbitMQ
 
     Acheteur->>Web2: Sélection siège
-    Web2->>Core: POST /seats/lock<br/>(event_id, seat_id, session_id)
+    Web2->>Core: POST /seats/lock<br/>(event_id, external_seat_id, session_id)
     Core->>Redis: EVAL lock_seat.lua (SET NX PX 600000)
     alt Siège libre
         Redis-->>Core: 1
@@ -138,18 +146,24 @@ sequenceDiagram
     end
 
     Acheteur->>Web2: Paiement € (Stripe / PayPlug)
-    Web2->>Bridge: POST /webhooks/payment (HMAC)
-    Bridge->>PG: INSERT TRANSACTION_AUDIT_LOGS<br/>(PENDING_MINT, UUID tx)
-    Bridge-->>Web2: 202 Accepted
-    Bridge->>MQ: Publish mint.{org_id}.{event_id}
+    Web2->>Core: POST /webhooks/payment (HMAC)
+    Core->>PG: INSERT TRANSACTION_AUDIT_LOGS<br/>(PENDING_MINT, UUID tx)
+    Core-->>Web2: 202 Accepted + transaction_id
 
-    MQ->>Bridge: Consumes bens.mint.requests
-    Bridge->>SC: Mint NFT/SBT via Paymaster
-    SC-->>Bridge: blockchain_tx_hash
-    Bridge->>PG: UPDATE status=MINTED + tx_hash
-    Bridge->>Web2: Webhook réconciliation (HMAC)<br/>+ log WEBHOOK_DISPATCHES
-    Bridge->>Core: Billet certifié disponible
-    Core-->>Acheteur: QR Code dynamique
+    Core->>Contract: MintOrchestrator.mint(tx_id, …)
+    Contract->>MX: mint() via Paymaster
+    MX-->>Contract: blockchain_tx_hash
+    Contract-->>Core: tx_hash
+    Core->>PG: UPDATE status=MINTED + tx_hash
+
+    Bridge->>MX: Écoute événement Mint
+    Bridge->>PG: Réconciliation audit
+    Bridge->>MQ: Publish bens.webhook.outbox
+    MQ->>Bridge: Consume
+    Bridge->>Web2: Webhook réconciliation (HMAC)
+    Bridge->>PG: LOG WEBHOOK_DISPATCHES
+
+    Note over Core,Acheteur: QR statique disponible (POC SF-07)
 ```
 
 ### 2.2. Mapping des 10 étapes du parcours acheteur
@@ -157,31 +171,32 @@ sequenceDiagram
 | # | Étape | Composant | Écriture MLD |
 | ---: | :--- | :--- | :--- |
 | 1 | Sélection du siège | Partenaire Web2 | — |
-| 2 | `POST /seats/lock` | BENS Core (Redis Lua) | — (in-memory) |
-| 3 | Verrou 200 OK + TTL 10 min | BENS Core | — |
+| 2 | `POST /seats/lock` | BensCore (Redis Lua) | — (in-memory) |
+| 3 | Verrou 200 OK + TTL 10 min | BensCore | — |
 | 4 | Paiement € | Partenaire Web2 | — |
-| 5 | Webhook paiement → BENS | BENS Bridge | `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`) |
-| 6 | Écriture audit log | BENS Bridge | `TRANSACTION_AUDIT_LOGS` |
-| 7 | Publication ordre de mint | BENS Bridge → RabbitMQ | — |
-| 8 | Worker : mint NFT/SBT | BENS Bridge → BENS Contracts | `TRANSACTION_AUDIT_LOGS` (`MINTED` + `tx_hash`) |
-| 9 | Webhook réconciliation → partenaire | BENS Bridge | `WEBHOOK_DISPATCHES` |
-| 10 | Billet + QR dynamique | BENS Core | — |
+| 5 | Webhook paiement → BENS | **BensCore** | `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`) |
+| 6 | Écriture audit log | **BensCore** | `TRANSACTION_AUDIT_LOGS` |
+| 7 | Ordre de mint | **BensCore → BensContract** | — (appel direct, pas RabbitMQ) |
+| 8 | Mint NFT/SBT | BensContract → MultiversX | `TRANSACTION_AUDIT_LOGS` (`MINTED` + `tx_hash`) via BensCore |
+| 9 | Webhook réconciliation → partenaire | **BensBridge** (RabbitMQ outbox) | `WEBHOOK_DISPATCHES` |
+| 10 | Billet + QR **statique** | BensCore | — |
 
 ### 2.3. Parcours organisateur (configuration du bridge)
 
 ```text
 1. Connexion Dashboard BENS (RBAC)
-2. Création d'un Bridge d'événement
+2. Création d'un EVENT_BRIDGES (status = DRAFT)
 3. Saisie de external_event_id (opaque)
-4. Configuration EventContractConfig (`EVENT_CONTRACT_CONFIGS`) :
+4. Configuration EVENT_SMART_RULES (1:1 avec EVENT_BRIDGES) :
    • token_type = NFT | SBT
    • max_resale_price_percent (BigDecimal)
    • royalty_fee_percent (BigDecimal)
    • max_tickets_per_user
    • allow_secondary_market
 5. « Déployer & Activer »
-6. BENS Contracts déploie le SC sur MultiversX
-7. Génération API keys + URL webhook de callback
+6. BensCore orchestre → BensContract déploie le SC sur MultiversX
+7. BensContract écrit smart_contract_address dans EVENT_BRIDGES
+8. status → ACTIVE ; clés API + URL webhook de callback
    États bridge : DRAFT → ACTIVE → PAUSED → ARCHIVED
 ```
 
@@ -193,9 +208,9 @@ sequenceDiagram
 
 | ID | Intitulé | Critère mesurable | Composant | Table MLD |
 | :--- | :--- | :--- | :--- | :--- |
-| **SF-01** | Verrouillage de siège (Redis Lua) | Verrou en mémoire **< 2 ms**, script Lua atomique | BENS Core (Redis) | — (in-memory) |
-| **SF-02** | Expiration automatique (TTL) | TTL **10 min** exactes, libération sans altération de données | BENS Core (Redis) | — (in-memory) |
-| **SF-03** | Anti-overbooking | 1er → **200 OK**, 2e → **409 Conflict** | BENS Core (API) | — |
+| **SF-01** | Verrouillage de siège (Redis Lua) | Verrou en mémoire **< 2 ms**, script Lua atomique | BensCore (Redis) | — (in-memory) |
+| **SF-02** | Expiration automatique (TTL) | TTL **10 min** exactes, libération sans altération de données | BensCore (Redis) | — (in-memory) |
+| **SF-03** | Anti-overbooking | 1er → **200 OK**, 2e → **409 Conflict** | BensCore (API) | — |
 
 #### 3.1.1. Spécification du flux de réservation atomique (Lock Redis)
 
@@ -230,29 +245,30 @@ return 1    -- → 200 OK
 
 | ID | Intitulé | Critère mesurable | Composant | Table MLD |
 | :--- | :--- | :--- | :--- | :--- |
-| **SF-05** | Mint asynchrone | Ordre de mint publié après paiement €, **non bloquant** | BENS Bridge (RabbitMQ) | `TRANSACTION_AUDIT_LOGS` |
-| **SF-06** | Masquage blockchain (Paymaster) | Smart Wallet + gas fees payés par BENS | BENS Contracts (Paymaster) | — |
-| **SF-07** | QR Code dynamique | Rafraîchissement périodique, anti-capture écran | BENS Core (QR) | — |
+| **SF-05** | Mint asynchrone | Après paiement € : `202 Accepted` immédiat ; mint orchestré par BensCore → BensContract (**non bloquant** pour l'achat) | BensCore (orchestre) → BensContract (mint) | `TRANSACTION_AUDIT_LOGS` |
+| **SF-06** | Masquage blockchain (Paymaster) | Smart Wallet + gas fees payés par BENS | BensContract (Paymaster) | — |
+| **SF-07** | QR Code | QR **statique** (scope POC) ; dynamique reporté hors POC | BensCore (QR) | — |
 
-**Topologie RabbitMQ** :
+**Topologie RabbitMQ** (webhooks **sortants** uniquement — **pas de queue de mint**) :
 
-- Exchange : `bens.mint` (topic)
-- Queue : `bens.mint.requests` + DLQ `bens.mint.dlq`
-- Routing key : `mint.{org_id}.{event_id}`
+- Exchange : `bens.webhooks` (topic)
+- Queue : `bens.webhook.outbox` + DLQ `bens.webhook.dlq`
+- Routing key : `webhook.{org_id}.{event_id}`
 - Retry exponentiel : 1s, 5s, 30s, 5min → DLQ après 4 tentatives
+- Composant : **BensBridge**
 
 ### 3.3. Module Dashboard Organisateur & Marché Secondaire
 
 | ID | Intitulé | Critère mesurable | Composant | Table MLD |
 | :--- | :--- | :--- | :--- | :--- |
-| **SF-09** | Règles de revente | Plafond prix + royalties configurables | BENS Contracts (SC) | `EVENT_CONTRACT_CONFIGS` |
-| **SF-10** | SBT intransférables (optionnel) | Forçage SBT possible par organisateur | BENS Contracts (SC) | `EVENT_CONTRACT_CONFIGS` |
+| **SF-09** | Règles de revente | Plafond prix + royalties configurables ; royalties tracées dans `SECONDARY_SALES` | BensContract (SC) + BensCore (dashboard) | `EVENT_SMART_RULES` / `SECONDARY_SALES` |
+| **SF-10** | SBT intransférables (optionnel) | Forçage SBT possible par organisateur | BensContract (SC) | `EVENT_SMART_RULES` |
 
 #### 3.3.1. Règles de calcul des royalties B2B (`BigDecimal`)
 
 Tous les pourcentages monétaires sont des **`DECIMAL(5,2)` / `BigDecimal`** (jamais `float` / `double`) pour éviter les erreurs d'arrondi.
 
-| Colonne MLD (`EVENT_CONTRACT_CONFIGS`) | Type | Domaine | Rôle |
+| Colonne MLD (`EVENT_SMART_RULES`) | Type | Domaine | Rôle |
 | :--- | :--- | :--- | :--- |
 | `max_resale_price_percent` | `DECIMAL(5,2)` | `0.00` → `200.00` | Plafond de revente (% du prix facial) |
 | `royalty_fee_percent` | `DECIMAL(5,2)` | `0.00` → `50.00` | Royalties organisateur (% du prix de revente) |
@@ -279,7 +295,7 @@ royalty          = prix_revente × (royalty_fee_percent / 100)
 | 100,00 € | 100,00 | 100,00 € | 10,00 | 10,00 € |
 | 80,00 € | 150,00 | 120,00 € | 5,00 | 6,00 € (si revente à 120 €) |
 
-Flux de revente : vérification plafond → paiement → réémission billet (burn+mint ou transfer) → royalties SC → webhook réconciliation → QR régénéré (SF-07).
+Flux de revente : vérification plafond → transfer on-chain → royalties SC créditées à l'organisateur → BensBridge détecte Resale → INSERT `SECONDARY_SALES` (`royalty_amount`, `resale_price`, `blockchain_tx_hash`) → dashboard agrège les royalties perçues (captation de valeur).
 
 ---
 
@@ -289,23 +305,24 @@ Flux de revente : vérification plafond → paiement → réémission billet (bu
 
 | ID | Intitulé | Critère mesurable | Composant |
 | :--- | :--- | :--- | :--- |
-| **NFR-01** | Latence clic | Réponse API verrouillage **< 2 ms** à charge nominale | BENS Core (Redis) |
-| **NFR-02** | Débit | **≥ 10 000 req/s** sur instance standard sans saturation CPU/RAM | BENS Core (API) |
-| **NFR-03** | Isolation BDD | **0 écriture** BDD SQL partenaire pendant sélection/verrouillage | BENS Core (Redis) |
+| **NFR-01** | Latence clic | Réponse API verrouillage **< 2 ms** à charge nominale | BensCore (Redis) |
+| **NFR-02** | Débit | **≥ 10 000 req/s** sur instance standard sans saturation CPU/RAM | BensCore (API) |
+| **NFR-03** | Isolation BDD | **0 écriture** BDD SQL partenaire pendant sélection/verrouillage | BensCore (Redis) |
 
 ### 4.2. Résilience, idempotence & disponibilité
 
 | ID | Intitulé | Critère mesurable | Composant |
 | :--- | :--- | :--- | :--- |
-| **NFR-04** | Tolérance aux pannes | Worker de secours rejoue via `transaction_audit_logs` | BENS Bridge (replay) |
-| **NFR-05** | Idempotence | Webhooks + ordres de mint idempotents (**UUID transaction unique**) | BENS Bridge |
-| **NFR-06** | Disponibilité Web3 | Indisponibilité Web3 **ne bloque jamais** l'achat € | BENS Bridge (mint async) |
+| **NFR-04** | Tolérance aux pannes | Replay possible via `transaction_audit_logs` + retries webhooks / DLQ | BensBridge (replay) |
+| **NFR-05** | Idempotence | Webhooks + ordres de mint idempotents (**UUID transaction unique**) | BensCore + BensBridge |
+| **NFR-06** | Disponibilité Web3 | Indisponibilité Web3 **ne bloque jamais** l'achat € (`202` immédiat, mint après) | BensCore (orchestration) |
 
 **Idempotence** :
 
-- UUID de transaction généré à la réception du webhook paiement, propagé jusqu'au mint et au webhook sortant.
+- UUID de transaction généré par **BensCore** à la réception du webhook paiement, propagé jusqu'au mint et au webhook sortant.
 - `TRANSACTION_AUDIT_LOGS.payment_provider_ref` est **UNIQUE**.
-- Avant mint : si `blockchain_tx_hash` déjà présent → pas de re-mint, rejeu du webhook uniquement.
+- Avant mint : si `blockchain_tx_hash` déjà présent → pas de re-mint ; BensBridge peut rejouer le webhook sortant uniquement.
+- `SECONDARY_SALES.blockchain_tx_hash` est **UNIQUE** (une revente on-chain = une ligne).
 
 ---
 
@@ -318,11 +335,14 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 | `MERCHANTS` | Merchant | Partenaires B2B |
 | `COLLABORATORS` | Collaborator | Accès dashboard (RBAC) |
 | `BLACKLISTED_IPS` | BlacklistedIp | Ban IP multi-tenant |
-| `EVENT_CONTRACT_CONFIGS` | EventContractConfig | Bridge événement + règles SC |
-| `TRANSACTION_AUDIT_LOGS` | TransactionAuditLog | Audit paiement → mint |
-| `WEBHOOK_DISPATCHES` | *(technique)* | File + retries webhooks sortants |
+| `EVENT_BRIDGES` | EventBridge | Bridge événement + adresse SC (stockée par BensContract) |
+| `EVENT_SMART_RULES` | EventSmartRules | Règles SC (1:1) — royalties, plafond, SBT |
+| `TRANSACTION_AUDIT_LOGS` | TransactionAuditLog | Audit paiement → mint (écrit par **BensCore**) |
+| `SECONDARY_SALES` | SecondarySale | **Preuve de captation de valeur** (écrit par BensBridge) |
+| `WEBHOOK_DISPATCHES` | *(technique)* | File + retries webhooks sortants (BensBridge) |
 
-**Aucune** table `events`, `seats`, `categories`, `prices`, `orders` côté BENS.
+**Aucune** table `events`, `seats`, `categories`, `prices`, `orders` côté BENS.  
+**Aucun** email de contrepartie dans `SECONDARY_SALES` (discipline middleware).
 
 ---
 
@@ -345,13 +365,16 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 - [ ] Concurrent → 200 / 409 (SF-03)
 - [ ] Plafond + royalties ancrés dans le SC en `BigDecimal` (SF-09)
 - [ ] SBT configurable (SF-10)
-- [ ] QR rafraîchi périodiquement (SF-07)
+- [ ] QR statique livré (SF-07 POC)
+- [ ] Royalties tracées dans `SECONDARY_SALES` (captation de valeur)
 - [ ] Aucun concept billetterie (catalogue, sièges, panier, prix) stocké côté BENS
 
 ### Anti-patterns à proscrire
 
 - ❌ Écriture synchrone PostgreSQL pendant le verrouillage
-- ❌ Mint synchrone bloquant l'achat €
+- ❌ Mint synchrone bloquant l'achat € (répondre `202` avant le mint)
+- ❌ RabbitMQ pour le mint (le mint est un appel BensCore → BensContract)
+- ❌ Webhook paiement reçu par BensBridge (c'est BensCore)
 - ❌ Webhook sortant sans UUID de transaction
 - ❌ Slug / nom d'événement dans une clé Redis
 - ❌ Secret / clé privée blockchain en clair (BDD, logs)
@@ -364,15 +387,19 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 
 | Critère d'acceptation US 1.1 | Couverture dans ce document |
 | :--- | :--- |
-| Cahier des charges + diagramme de séquence Core ↔ Contracts ↔ Bridge | §§ 0–2 (expression du besoin, architecture 3 MS, Mermaid § 2.1) |
+| Cahier des charges + diagramme de séquence Core → Contracts → Bridge | §§ 0–2 (expression du besoin, architecture 3 MS, Mermaid § 2.1) |
 | Spec flux réservation atomique (Lock Redis) + royalties B2B (`BigDecimal`) | §§ 3.1.1 et 3.3.1 |
-| Stack complète Java 21, Spring Boot 3.4+, Angular 18+, MultiversX, Redis, RabbitMQ | § 1.2 |
+| Stack complète Java 25, Spring Boot 4+, Angular 18+, MultiversX, Redis, RabbitMQ | § 1.2 |
 | Documentation validée dans `/docs` | `docs/01-contexte/cahier-des-charges.md` |
 
 ---
 
 ## 8. Ressources liées
 
+- Architecture : `docs/03-conception/architecture.md`
+- Spécifications : `docs/03-conception/specifications.md`
+- Vision : `docs/01-contexte/vision.md`
+- Expression de besoin : `docs/01-contexte/expression-besoin.md`
 - MLD : `docs/03-conception/mcd/mld.md`
 - Planning : `docs/02-gestion-projet/planning.md`
 - Skills projet : `bens-conformite-cahier-des-charges`, `bens-middleware-discipline`, `bens-redis-verrou-lua`, `bens-bridge-web2-web3`, `bens-marche-secondaire`
