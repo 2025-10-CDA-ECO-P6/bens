@@ -1,0 +1,97 @@
+/* =========================================================================
+   PulseTicket — custom styles (complements Tailwind Play CDN)
+   Tailwind utility classes are generated at runtime by the Play CDN.
+   This file holds only: base resets, keyframes/animations, scrollbar
+   polish, and a few component helpers that are easier in plain CSS.
+   ========================================================================= */
+
+:root {
+    --bg: #020617;          /* slate-950 */
+    --surface: #0f172a;     /* slate-900 */
+    --accent: #f97316;      /* orange-500 */
+    --accent-2: #ec4899;    /* pink-500 */
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+.font-display { font-family: 'Sora', 'Inter', system-ui, sans-serif; }
+
+/* ---- Keyframes ---------------------------------------------------------- */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideDown {
+    from { opacity: 0; transform: translate(-50%, -16px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes successPop {
+    0%   { opacity: 0; transform: scale(0.4); }
+    60%  { opacity: 1; transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* Tailwind Play CDN doesn't know about our custom animation names, so we
+   also expose them as plain classes used directly in the markup. */
+.animate-fade-in-up     { animation: fadeInUp 0.6s ease-out both; }
+.animate-slide-down     { animation: slideDown 0.35s ease-out both; }
+.animate-success-pop    { animation: successPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+.animation-delay-100 { animation-delay: 0.1s; }
+.animation-delay-200 { animation-delay: 0.2s; }
+.animation-delay-300 { animation-delay: 0.3s; }
+.animation-delay-400 { animation-delay: 0.4s; }
+
+/* ---- Navbar scroll state ------------------------------------------------ */
+#navbar { background: transparent; backdrop-filter: blur(0); }
+#navbar.scrolled {
+    background: rgba(2, 6, 23, 0.82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ---- Seat map polish ---------------------------------------------------- */
+.seat-btn { user-select: none; }
+.seat-btn:active { transform: scale(0.92); }
+.seat-btn.selected { box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.4); }
+
+/* ---- Scrollbars --------------------------------------------------------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 9999px;
+    border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ---- Prose tweaks for event descriptions -------------------------------- */
+.prose-invert p { color: rgb(203 213 225); }
+
+/* ---- QR code container (qrcodejs injects canvas/img) -------------------- */
+.ticket-qr { display: flex; align-items: center; justify-content: center; }
+.ticket-qr img,
+.ticket-qr canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; }
+
+/* ---- Flash toast auto-hide (handled in JS, but graceful fallback) -------- */
+[id^="flash-"] { transition: opacity 0.4s ease, transform 0.4s ease; }
+
+/* ---- Card hover lift helper --------------------------------------------- */
+.hover-lift { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.hover-lift:hover { transform: translateY(-4px); }
+
+/* ---- Mobile menu transition --------------------------------------------- */
+#mobileMenu { transition: max-height 0.3s ease, opacity 0.3s ease; }
+
+/* ---- Selection ---------------------------------------------------------- */
+::selection { background: rgba(249, 115, 22, 0.35); color: #fff; }
