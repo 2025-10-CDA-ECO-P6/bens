@@ -10,17 +10,20 @@
 
 Ce document formalise :
 
-1. Les **contrats d'API partenaire** (payloads, HTTP, codes d'erreur).
-2. Le **webhook sortant** de réconciliation (BensCore → partenaire).
-3. Les **conventions Redis** et **RabbitMQ**.
-4. Le **mapping SF/NFR → composants**.
-5. Les **règles marché secondaire** (captation de valeur — argument n°1).
+1. Les **contrats d'API partenaire** (`/api/v1` — payloads, HTTP, codes d'erreur).
+2. Les **contrats d'API dashboard** (`/api/dashboard/v1` — même BensCore, JWT/RBAC).
+3. Le **webhook sortant** de réconciliation (BensCore → partenaire).
+4. Les **conventions Redis** et **RabbitMQ**.
+5. Le **mapping SF/NFR → composants**.
+6. Les **règles marché secondaire** (captation de valeur — argument n°1).
+
+Les deux surfaces HTTP vivent dans **BensCore** ; séparation = préfixe + auth.
 
 ---
 
 ## 2. Conventions transverses
 
-### 2.1. Authentification API B2B
+### 2.1. Authentification API partenaire (`/api/v1`)
 
 
 | Élément    | Valeur                                                            |
@@ -30,6 +33,18 @@ Ce document formalise :
 | Isolation  | `merchant_id` / `org_id` déduit de la clé → contexte multi-tenant |
 | IP         | Whitelist par marchand ; hors whitelist → `403`                   |
 | Rate limit | Seuil configurable par org → `429`                                |
+
+
+### 2.1bis. Authentification API dashboard (`/api/dashboard/v1`)
+
+
+| Élément | Valeur |
+| ------- | ------ |
+| Auth    | `Authorization: Bearer <JWT>` |
+| Sujet   | Collaborateur (`COLLABORATORS`) rattaché à un marchand |
+| Rôles   | `ADMIN`, `CLIENT_SUCCESS`, `READ_ONLY` |
+| Isolation | `merchant_id` déduit du JWT (multi-tenant) |
+| Front   | Angular uniquement — **jamais** exposée à la billetterie partenaire |
 
 
 ### 2.2. Identifiants
@@ -69,16 +84,18 @@ Ce document formalise :
 | `BRIDGE_NOT_ACTIVE`   | 409  | Bridge pas en statut `ACTIVE`                |
 | `NOT_FOUND`           | 404  | Ressource inconnue                           |
 | `VALIDATION_ERROR`    | 400  | Payload invalide                             |
+| `UNAUTHORIZED`        | 401  | JWT absent / invalide (dashboard)            |
+| `FORBIDDEN`           | 403  | Rôle RBAC insuffisant (dashboard)            |
 
 
 ---
 
-## 3. Contrats d'API partenaire (BensCore)
+## 3. Contrats d'API partenaire (BensCore — `/api/v1`)
 
 Tous les endpoints ci-dessous (sauf mention contraire) exigent `X-BENS-Api-Key`
-et l'IP whitelist.
+et l'IP whitelist. Préfixe normatif : **`/api/v1`**.
 
-### 3.1. `POST /seats/lock`
+### 3.1. `POST /api/v1/seats/lock`
 
 Verrouille un siège en mémoire Redis (SF-01, SF-02, SF-03, NFR-01, NFR-03).
 
@@ -116,7 +133,7 @@ Verrouille un siège en mémoire Redis (SF-01, SF-02, SF-03, NFR-01, NFR-03).
 
 ---
 
-### 3.2. `POST /seats/unlock`
+### 3.2. `POST /api/v1/seats/unlock`
 
 Libère un verrou (compare-and-delete : seul le `session_id` propriétaire).
 
@@ -141,7 +158,7 @@ Libère un verrou (compare-and-delete : seul le `session_id` propriétaire).
 
 ---
 
-### 3.3. `POST /webhooks/payment`
+### 3.3. `POST /api/v1/webhooks/payment`
 
 Confirmation de paiement € (SF-05, NFR-05, NFR-06). Reçu par **BensCore**.
 
@@ -193,7 +210,7 @@ Confirmation de paiement € (SF-05, NFR-05, NFR-06). Reçu par **BensCore**.
 
 ---
 
-### 3.4. `GET /transactions/{id}`
+### 3.4. `GET /api/v1/transactions/{id}`
 
 Statut d'une transaction d'audit.
 
@@ -224,7 +241,79 @@ Statut d'une transaction d'audit.
 
 ---
 
-## 4. Webhook sortant de réconciliation (BensCore → partenaire)
+## 4. Contrats d'API dashboard (BensCore — `/api/dashboard/v1`)
+
+Même microservice que l'API partenaire. Auth **JWT + RBAC** (§ 2.1bis).
+Consommée par le front Angular uniquement.
+
+> Les payloads ci-dessous sont **indicatifs** (niveau famille d'endpoints) ;
+> le détail OpenAPI pourra être affiné à l'implémentation (US 4.4, 4.5, 5.x).
+
+### 4.1. Auth
+
+| Méthode | Path | Rôle |
+| ------- | ---- | ---- |
+| `POST` | `/api/dashboard/v1/auth/login` | Échange credentials → JWT |
+| `GET` | `/api/dashboard/v1/me` | Profil collaborateur + rôle RBAC |
+
+### 4.2. Bridges (`EVENT_BRIDGES`)
+
+| Méthode | Path | Rôle | Rôles min. |
+| ------- | ---- | ---- | ---------- |
+| `GET` | `/api/dashboard/v1/bridges` | Lister les bridges du marchand | `READ_ONLY` |
+| `POST` | `/api/dashboard/v1/bridges` | Créer (`external_event_id`, status `DRAFT`) | `ADMIN` |
+| `GET` | `/api/dashboard/v1/bridges/{id}` | Détail bridge | `READ_ONLY` |
+| `PATCH` | `/api/dashboard/v1/bridges/{id}` | Maj métadonnées / transitions `PAUSED`… | `ADMIN` |
+
+**Création (exemple body)**
+
+```json
+{
+  "external_event_id": "FNAC-EVT-992"
+}
+```
+
+### 4.3. Règles smart contract (`EVENT_SMART_RULES`)
+
+| Méthode | Path | Rôle | Rôles min. |
+| ------- | ---- | ---- | ---------- |
+| `GET` | `/api/dashboard/v1/bridges/{id}/smart-rules` | Lire les règles | `READ_ONLY` |
+| `PUT` | `/api/dashboard/v1/bridges/{id}/smart-rules` | Créer / remplacer (1:1) | `ADMIN` |
+
+**Body (exemple)**
+
+```json
+{
+  "token_type": "NFT",
+  "allow_secondary_market": true,
+  "max_resale_price_percent": 100.00,
+  "royalty_fee_percent": 10.00,
+  "max_tickets_per_user": 4
+}
+```
+
+Contraintes : alignées MLD (`token_type` NFT|SBT, domaines %, SBT ⇒
+`allow_secondary_market = false`).
+
+### 4.4. Déploiement SC
+
+| Méthode | Path | Rôle | Rôles min. |
+| ------- | ---- | ---- | ---------- |
+| `POST` | `/api/dashboard/v1/bridges/{id}/deploy` | Core → `BensContract.deploy` ; persiste adresse ; `ACTIVE` | `ADMIN` |
+
+Réponse indicative : `{ "smart_contract_address": "erd1…", "status": "ACTIVE" }`.
+
+### 4.5. Suivi
+
+| Méthode | Path | Rôle | Rôles min. |
+| ------- | ---- | ---- | ---------- |
+| `GET` | `/api/dashboard/v1/transactions` | Liste audit (filtres status…) | `READ_ONLY` |
+| `GET` | `/api/dashboard/v1/transactions/{id}` | Détail audit | `READ_ONLY` |
+| `GET` | `/api/dashboard/v1/secondary-sales` | Royalties / captation de valeur | `READ_ONLY` |
+
+---
+
+## 5. Webhook sortant de réconciliation (BensCore → partenaire)
 
 Envoyé par **BensCore** après consommation d'une confirmation Bridge
 (`bens.mint.confirmations`) et passage de l'audit à `MINTED`.
@@ -274,7 +363,7 @@ Envoyé par **BensCore** après consommation d'une confirmation Bridge
 
 ---
 
-## 5. Conventions Redis
+## 6. Conventions Redis
 
 
 | Clé                                                | TTL        | Opération     |
@@ -302,7 +391,7 @@ return 1    -- → 200
 
 ---
 
-## 6. Conventions RabbitMQ
+## 7. Conventions RabbitMQ
 
 
 | Élément      | Valeur                                            |
@@ -322,9 +411,9 @@ on-chain (et reventes) Bridge → Core.
 
 ---
 
-## 7. Marché secondaire — captation de valeur (SF-09, SF-10)
+## 8. Marché secondaire — captation de valeur (SF-09, SF-10)
 
-### 7.1. Paramètres (`EVENT_SMART_RULES`)
+### 8.1. Paramètres (`EVENT_SMART_RULES`)
 
 
 | Champ                      | Type         | Domaine       | Rôle                             |
@@ -336,7 +425,7 @@ on-chain (et reventes) Bridge → Core.
 | `max_tickets_per_user`     | INTEGER      | défaut 4      | Anti-bot                         |
 
 
-### 7.2. Formules (`BigDecimal`, scale 2, `HALF_UP`)
+### 8.2. Formules (`BigDecimal`, scale 2, `HALF_UP`)
 
 ```text
 plafond_revente = prix_facial × (max_resale_price_percent / 100)
@@ -344,7 +433,7 @@ royalty         = prix_revente × (royalty_fee_percent / 100)
 contrainte      : prix_revente ≤ plafond_revente
 ```
 
-### 7.3. Preuve de captation (`SECONDARY_SALES`)
+### 8.3. Preuve de captation (`SECONDARY_SALES`)
 
 
 | Champ                | Description                      |
@@ -361,14 +450,14 @@ par BensBridge. Agrégé par le dashboard organisateur.
 
 ---
 
-## 8. Mapping SF / NFR → composants
+## 9. Mapping SF / NFR → composants
 
-### 8.1. Spécifications fonctionnelles
+### 9.1. Spécifications fonctionnelles
 
 
 | ID        | Intitulé                   | Composant                                | Preuve / livrable                       |
 | --------- | -------------------------- | ---------------------------------------- | --------------------------------------- |
-| **SF-01** | Verrou Redis Lua < 2 ms    | BensCore                                 | `POST /seats/lock` + script Lua         |
+| **SF-01** | Verrou Redis Lua < 2 ms    | BensCore                                 | `POST /api/v1/seats/lock` + script Lua  |
 | **SF-02** | TTL 10 min                 | BensCore                                 | `PX 600000`                             |
 | **SF-03** | Anti-overbooking 200 / 409 | BensCore                                 | Concurrent lock                         |
 | **SF-05** | Mint asynchrone            | BensCore → BensContract                  | `202` puis mint                         |
@@ -378,7 +467,7 @@ par BensBridge. Agrégé par le dashboard organisateur.
 | **SF-10** | SBT optionnel              | BensContract (SC)                        | `token_type = SBT`                      |
 
 
-### 8.2. Spécifications non fonctionnelles
+### 9.2. Spécifications non fonctionnelles
 
 
 | ID         | Intitulé             | Composant             | Critère                     |
@@ -392,7 +481,7 @@ par BensBridge. Agrégé par le dashboard organisateur.
 | **NFR-07** | Immuabilité règles   | BensContract          | Royalties/plafond ancrés SC |
 
 
-### 8.3. Recette (rappel)
+### 9.3. Recette (rappel)
 
 
 | Scénario         | Outil                      | Attendu                                    |
@@ -404,7 +493,7 @@ par BensBridge. Agrégé par le dashboard organisateur.
 
 ---
 
-## 9. Appels internes (hors surface partenaire)
+## 10. Appels internes (hors surfaces HTTP partenaires / dashboard)
 
 
 | Appel                                    | De → Vers               | Rôle                                       |
@@ -419,22 +508,23 @@ par BensBridge. Agrégé par le dashboard organisateur.
 
 ---
 
-## 10. Traçabilité 
+## 11. Traçabilité 
 
 
 | Critère                                       | Couverture |
 | --------------------------------------------- | ---------- |
-| Contrats API lock / unlock / payment / statut | §§ 3.1–3.4 |
-| Payloads, HTTP, codes d'erreur                | §§ 2.3, 3  |
-| Mapping SF/NFR → composants                   | § 8        |
-| Conventions Redis / RabbitMQ                  | §§ 5–6     |
-| Règles marché secondaire + captation          | § 7        |
-| Webhook sortant HMAC                          | § 4        |
+| Contrats API partenaire lock / unlock / payment / statut | §§ 3.1–3.4 |
+| Contrats API dashboard (bridges, règles, deploy, suivi) | § 4 |
+| Payloads, HTTP, codes d'erreur                | §§ 2.3, 3–4 |
+| Mapping SF/NFR → composants                   | § 9        |
+| Conventions Redis / RabbitMQ                  | §§ 6–7     |
+| Règles marché secondaire + captation          | § 8        |
+| Webhook sortant HMAC                          | § 5        |
 
 
 ---
 
-## 11. Ressources liées
+## 12. Ressources liées
 
 - Architecture : `[architecture.md](./architecture.md)`
 - Cahier des charges : `[../01-contexte/cahier-des-charges.md](../01-contexte/cahier-des-charges.md)`

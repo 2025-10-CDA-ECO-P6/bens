@@ -75,6 +75,7 @@ BensBridge n'ont pas d'accès BDD.
 | RabbitMQ = Bridge → Core | Queue de **confirmations** ; Core consomme à rythme contrôlé |
 | `MINTED` + webhook partenaire | **BensCore** uniquement (après consume) |
 | PostgreSQL | **BensCore seul** (`schema.sql` / init Spring) ; Contract et Bridge sans BDD |
+| Deux surfaces HTTP dans BensCore | `/api/v1` (partenaire, API key) · `/api/dashboard/v1` (JWT/RBAC) |
 | Pas de Flyway | `CREATE TABLE IF NOT EXISTS` + Spring Boot `spring.sql.init` |
 
 ---
@@ -102,15 +103,17 @@ flowchart TB
   end
 
   subgraph Core["BensCore"]
-    API[API B2B<br/>lock / unlock / statut]
-    Auth[CustomAuthFilter<br/>API Key · IP · rate limit]
+    API[API partenaire /api/v1]
+    DashAPI[API dashboard /api/dashboard/v1]
+    Auth[Auth partenaire<br/>API Key · IP · rate limit]
+    JwtAuth[Auth dashboard<br/>JWT · RBAC]
     RedisLua[Redis Lua<br/>verrou siège]
     PayWH[PaymentWebhookController]
     Audit[TransactionAuditService]
     Orch[MintOrchestrator]
     Consumer[ConfirmationConsumer<br/>rate-limité]
     Disp[WebhookDispatcher + Signer]
-    Dash[Dashboard Angular<br/>bridges · règles · royalties]
+    DashUI[Dashboard Angular]
     QR[QR statique]
   end
 
@@ -135,20 +138,21 @@ flowchart TB
     MX[MultiversX]
   end
 
-  VEL -->|POST /seats/lock| Auth --> API --> RedisLua --> RD
+  VEL -->|/api/v1 lock·payment| Auth --> API --> RedisLua --> RD
   VEL -->|POST /webhooks/payment HMAC| PayWH --> Audit --> PG
   Audit --> Orch --> MintSvc
   MintSvc --> Paymaster --> GW --> MX
   GW --> SC
   Deploy --> GW
   Orch --> Audit
-  Dash --> PG
+  DashUI -->|/api/dashboard/v1| JwtAuth --> DashAPI --> PG
+  DashAPI -->|deploy| Deploy
   Listener --> MX
   Listener --> Publisher --> MQ
   MQ --> Consumer --> Audit
   Consumer --> Disp -->|webhook HMAC| VEL
   Disp --> PG
-  QR --> Dash
+  QR --> DashUI
 ```
 
 ### Responsabilités par composant (détail)
@@ -157,14 +161,15 @@ flowchart TB
 
 | Composant | Responsabilité |
 | :--- | :--- |
-| `CustomAuthFilter` | Clé API, IP whitelist, rate limiting, isolation multi-tenant |
+| Auth partenaire | Clé API, IP whitelist, rate limiting, isolation multi-tenant (`/api/v1`) |
+| Auth dashboard | JWT + RBAC (`/api/dashboard/v1`) |
 | API lock/unlock | Verrou Redis Lua atomique (`SET NX PX 600000`) |
 | `PaymentWebhookController` | Réception HMAC paiement € → `202 Accepted` |
 | `TransactionAuditService` | `INSERT PENDING_MINT` (`tx_hash NULL`) ; `UPDATE` hash après soumission ; `UPDATE MINTED` après confirmation |
 | `MintOrchestrator` | Appelle BensContract, propage UUID transaction (idempotence) |
 | `ConfirmationConsumer` | Consomme RabbitMQ à rythme contrôlé (protection serveurs partenaires) |
 | `WebhookDispatcher` + Signer | Livraison HMAC sortante + `WEBHOOK_DISPATCHES` |
-| Dashboard | CRUD `EVENT_BRIDGES` / `EVENT_SMART_RULES`, suivi `SECONDARY_SALES` |
+| API dashboard | CRUD bridges / smart-rules, deploy SC, suivi `SECONDARY_SALES` |
 | QR | Billet certifié (statique — scope POC SF-07) quand `MINTED` |
 
 #### BensContract
@@ -209,7 +214,7 @@ sequenceDiagram
 
     Note over Acheteur,Redis: 1 — Verrouillage siège
     Acheteur->>Web2: Sélection siège
-    Web2->>Core: POST /seats/lock<br/>(event_id, external_seat_id, session_id)
+    Web2->>Core: POST /api/v1/seats/lock<br/>(event_id, external_seat_id, session_id)
     Core->>Redis: EVAL lock_seat.lua (SET NX PX 600000)
     alt Siège libre
         Redis-->>Core: 1
@@ -221,7 +226,7 @@ sequenceDiagram
 
     Note over Acheteur,PG: 2 — Paiement € (réponse rapide, mint pas fini)
     Acheteur->>Web2: Paiement € (Stripe / PayPlug)
-    Web2->>Core: POST /webhooks/payment (HMAC)
+    Web2->>Core: POST /api/v1/webhooks/payment (HMAC)
     Core->>PG: INSERT TRANSACTION_AUDIT_LOGS<br/>(PENDING_MINT, tx_hash NULL, UUID tx)
     Core-->>Web2: 202 Accepted + transaction_id
 
@@ -250,7 +255,7 @@ sequenceDiagram
 | # | Étape | Composant | Écriture |
 | ---: | :--- | :--- | :--- |
 | 1 | Sélection du siège | Partenaire Web2 | — |
-| 2 | `POST /seats/lock` | BensCore → Redis Lua | — (in-memory) |
+| 2 | `POST /api/v1/seats/lock` | BensCore → Redis Lua | — (in-memory) |
 | 3 | Verrou 200 OK + TTL 10 min | BensCore | — |
 | 4 | Paiement € | Partenaire Web2 | — |
 | 5 | Webhook paiement | **BensCore** | `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`, `tx_hash NULL`) |
@@ -350,22 +355,41 @@ Détail MLD : [`mcd/mld.md`](./mcd/mld.md) · DDL : [`mcd/schema.sql`](./mcd/sch
 
 ---
 
-## 7. Surface d'API partenaire (DX)
+## 7. Surfaces d'API (même microservice BensCore)
 
-Surface volontairement contractée :
+Deux façades HTTP dans **un seul** BensCore — séparation par préfixe et auth,
+pas par déploiement.
 
-| Endpoint | Module | Rôle |
-| :--- | :--- | :--- |
-| `POST /seats/lock` | BensCore | Verrouiller → `200` + TTL ou `409` |
-| `POST /seats/unlock` | BensCore | Libérer (compare-and-delete) |
-| `POST /webhooks/payment` | **BensCore** | Paiement confirmé (HMAC) → `202` |
-| `GET /transactions/{id}` | BensCore | Statut d'audit |
-| Dashboard | BensCore (Angular) | Bridges, règles, royalties |
+### 7.1. API partenaire (DX billetterie)
+
+Préfixe `/api/v1` — auth `X-BENS-Api-Key` + IP whitelist (+ HMAC sur webhook).
+Surface contractée — **pas plus** :
+
+| Endpoint | Rôle |
+| :--- | :--- |
+| `POST /api/v1/seats/lock` | Verrouiller → `200` + TTL ou `409` |
+| `POST /api/v1/seats/unlock` | Libérer (compare-and-delete) |
+| `POST /api/v1/webhooks/payment` | Paiement confirmé (HMAC) → `202` |
+| `GET /api/v1/transactions/{id}` | Statut d'audit |
 
 Codes d'erreur : `SEAT_ALREADY_LOCKED`, `SEAT_SOLD`, `MAX_TICKETS_REACHED`,
 `INVALID_SIGNATURE`, `INVALID_API_KEY`, `IP_NOT_ALLOWED`, `RATE_LIMIT_EXCEEDED`.
 
-Contrats détaillés : [`specifications.md`](./specifications.md) (US 1.7).
+### 7.2. API dashboard (organisateur)
+
+Préfixe `/api/dashboard/v1` — auth **JWT + RBAC** (`ADMIN`, `CLIENT_SUCCESS`,
+`READ_ONLY`). Consommée par Angular uniquement.
+
+| Famille | Endpoints (indicatif) | Rôle |
+| :--- | :--- | :--- |
+| Auth | `POST …/auth/login` | JWT collaborateur |
+| Bridges | `GET/POST …/bridges`, `GET/PATCH …/bridges/{id}` | CRUD `EVENT_BRIDGES` |
+| Règles SC | `GET/PUT …/bridges/{id}/smart-rules` | `EVENT_SMART_RULES` |
+| Déploiement | `POST …/bridges/{id}/deploy` | Orchestre BensContract → adresse SC |
+| Suivi | `GET …/transactions`, `GET …/secondary-sales` | Audit + royalties |
+| Compte | `GET …/me` | Profil + rôle |
+
+Contrats détaillés : [`specifications.md`](./specifications.md) §§ 3–4 (US 1.7).
 
 ---
 
@@ -410,9 +434,9 @@ flowchart LR
 
 | Couche | Mécanisme |
 | :--- | :--- |
-| API B2B | `X-BENS-Api-Key` hashée, IP whitelist, rate limiting |
+| API partenaire `/api/v1` | `X-BENS-Api-Key` hashée, IP whitelist, rate limiting |
+| API dashboard `/api/dashboard/v1` | JWT + RBAC (`ADMIN`, `CLIENT_SUCCESS`, `READ_ONLY`) |
 | Webhooks entrants / sortants | Signature HMAC (**BensCore**) |
-| Dashboard | JWT + RBAC (`ADMIN`, `CLIENT_SUCCESS`, `READ_ONLY`) |
 | Secrets | Jamais en clair en BDD / logs (clés API, secrets webhook, clés chain) |
 | Idempotence | UUID transaction + `UNIQUE(payment_provider_ref)` + `UNIQUE(blockchain_tx_hash)` sur reventes |
 | Isolation multi-tenant | `organization_id` / `merchant_id` déduit de la clé API |
@@ -443,6 +467,7 @@ flowchart LR
 | Diagramme de séquence paiement → mint → webhook | § 5 |
 | Diagramme de déploiement | § 8 |
 | Alignement décisions actées | § 2 (tableau) |
+| Surfaces API partenaire + dashboard (même Core) | § 7 |
 
 ---
 
