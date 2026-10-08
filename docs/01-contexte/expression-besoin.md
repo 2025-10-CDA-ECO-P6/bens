@@ -151,10 +151,12 @@ chaîne, **sans exposer la complexité Web3** aux équipes partenaires.
 - Déploiement du smart contract d'événement (Bens Contracts).
 - Verrouillage de sièges en mémoire Redis (script Lua atomique, TTL 10 min).
 - Réception des webhooks paiement € signés HMAC.
-- Audit transactionnel (`TRANSACTION_AUDIT_LOGS` : `PENDING_MINT → MINTED`).
-- Mint asynchrone de billets NFT/SBT sur MultiversX via Bens Contracts.
-- Réconciliation Web2 ↔ Web3 via écouteur blockchain + RabbitMQ + webhooks
-  sortants HMAC, incluant le reporting des reventes au dashboard.
+- Audit transactionnel (`TRANSACTION_AUDIT_LOGS` : `PENDING_MINT` → hash →
+  `MINTED` après confirmation on-chain ; écriture **BensCore seule**).
+- Mint asynchrone de billets NFT/SBT sur MultiversX via Bens Contracts (Rust/SDK).
+- Réconciliation Web2 ↔ Web3 : BensBridge écoute la chaîne et publie dans
+  RabbitMQ ; BensCore consomme à rythme contrôlé, passe à `MINTED` et envoie
+  les webhooks sortants HMAC (dont reporting reventes au dashboard).
 - QR statique (scope POC SF-07).
 - Recette de charge k6 (5 000 clics simultanés, crash-test Redis, revente).
 

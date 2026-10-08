@@ -60,22 +60,27 @@ partenaire et orchestre la certification.
   seule la clé opaque `lock:seat:{org_id}:{event_id}:{external_seat_id}` est
   posée.
 - **Payment Webhook Receiver** : reçoit la confirmation de paiement € du
-  partenaire (HMAC), écrit l'audit `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`),
-  puis **orchestre** le mint en appelant Bens Contracts.
+  partenaire (HMAC), écrit l'audit `TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`,
+  `tx_hash NULL`), répond `202`, puis **orchestre** le mint en appelant
+  Bens Contracts.
+- **ConfirmationConsumer** : consomme RabbitMQ à rythme contrôlé, passe
+  l'audit à `MINTED`, envoie les **webhooks sortants HMAC** au partenaire.
 - **Dashboard organisateur (Angular 18+)** : configuration des bridges,
   déploiement du smart contract, suivi des transactions et **suivi des
   royalties perçues** sur le marché secondaire, RBAC
   (Merchant ↔ `ORGANIZATIONS`, Collaborator ↔ `USERS`).
 - **QR Code statique** (scope POC SF-07) : billet certifié consultable côté
-  acheteur final.
+  acheteur final (statut `MINTED`).
+- **Seul accès PostgreSQL** parmi les trois modules.
 
 ### Bens Contracts (Rust / MultiversX)
 
 La logique métier immuable exécutée sur la blockchain, et la couche
-d'abstraction Web3 — **cœur de la captation de valeur**.
+d'abstraction Web3 (SDK MultiversX) — **cœur de la captation de valeur**.
+**Pas d'accès PostgreSQL** : retourne adresse SC / `tx_hash` à Bens Core.
 
 - **Déploiement des Smart Contracts** : crée et déploie le SC d'événement
-  sur MultiversX, stocke les IDs/adresses en base (`EVENT_BRIDGES`).
+  sur MultiversX ; Bens Core persiste l'adresse dans `EVENT_BRIDGES`.
 - **Smart Governance (royalties + plafond)** : à chaque revente, le SC
   calcule et crédite automatiquement la royalty à l'organisateur, vérifie le
   plafond de prix, applique `max_tickets_per_user` et le mode SBT si
@@ -94,26 +99,21 @@ d'abstraction Web3 — **cœur de la captation de valeur**.
 
 ### Bens Bridge (Java 25 / Spring Boot 4) & RabbitMQ
 
-Le cœur de la **réconciliation** Web2 ↔ Web3 — et uniquement cela.
+L'**oreille on-chain** : détecte la finalité, publie vers Core — pas de BDD,
+pas de webhook partenaire.
 
-- **Écouteur blockchain** : détecte les événements MultiversX (Mint,
-  Transfer, Resale) et rapproche l'état on-chain avec les
-  `TRANSACTION_AUDIT_LOGS`. Les reventes sont ainsi tracées et reportées au
-  dashboard organisateur (royalties perçues).
-- **RabbitMQ Message Broker** : les succès de transactions MultiversX sont
-  empilés dans la queue `bens.webhook.outbox` (exchange topic `bens.mint`,
-  routing key `mint.{org_id}.{event_id}`, DLQ persistante).
-- **Worker de Synchronisation** : consomme ces messages pour notifier le
-  partenaire via **webhooks sortants signés HMAC**.
-- **WebhookDispatcher + WebhookSigner** : signature HMAC sortante, retries
-  exponentiels (1s, 5s, 30s, 5min) puis DLQ après 4 tentatives.
-- **Lissage & Batching** : les webhooks sortants vers le partenaire sont
-  lissés (rate limiting ~200 confirmations/s) ou regroupés par lots,
-  protégeant ainsi leur infrastructure SQL de toute surcharge.
+- **Écouteur blockchain** : détecte les événements MultiversX confirmés
+  (Mint, Transfer, Resale).
+- **Publisher RabbitMQ** : publie les confirmations dans
+  `bens.mint.confirmations` (exchange topic `bens.confirmations`,
+  routing key `confirm.{org_id}.{event_id}`, DLQ persistante).
+- **Pas d'accès PostgreSQL** ; **pas** d'envoi de webhook au partenaire
+  (responsabilité de Bens Core).
 
-> **Pas de RabbitMQ pour le mint** : l'ordre de mint est transmis
-> synchronement de Bens Core à Bens Contracts. RabbitMQ n'est utilisé que
-> pour les **webhooks sortants** côté Bens Bridge.
+> **Pas de RabbitMQ pour soumettre le mint** : l'ordre de mint est transmis
+> de Bens Core à Bens Contracts (SDK). RabbitMQ porte les **confirmations
+> on-chain** Bridge → Core. Core consomme à rythme contrôlé (~200 conf/s)
+> puis notifie le partenaire (HMAC).
 
 ---
 
@@ -124,10 +124,11 @@ Le cœur de la **réconciliation** Web2 ↔ Web3 — et uniquement cela.
 L'organisateur initialise le *bridge* d'événement depuis le dashboard Bens.
 Il saisit son `external_event_id` opaque (jamais le catalogue complet) et
 configure les règles du smart contract
-(`EVENT_CONTRACT_CONFIGS` : `token_type`, `max_resale_price_percent`,
+(`EVENT_SMART_RULES` : `token_type`, `max_resale_price_percent`,
 `royalty_fee_percent`, `max_tickets_per_user`, `allow_secondary_market`).
-Bens Core ordonne alors à Bens Contracts de **déployer le SC** sur MultiversX
-et génère les clés API + l'URL de webhook de callback. États du bridge :
+Bens Core ordonne alors à Bens Contracts de **déployer le SC** sur MultiversX ;
+Contract retourne l'adresse, Core la persiste, puis génère les clés API +
+l'URL de webhook de callback. États du bridge :
 `DRAFT → ACTIVE → PAUSED → ARCHIVED`.
 
 > **Choix de captation** : l'organisateur décide ici du % de royalty qu'il
@@ -144,18 +145,17 @@ TTL 10 min). Si le verrou est obtenu → `200 OK` + TTL ; sinon → `409 Conflic
 
 Le fan paie en euros sur le checkout du partenaire (Stripe/PayPlug). Le
 partenaire envoie un **webhook paiement signé HMAC** à Bens Core, qui écrit
-`TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`) puis **ordonne à Bens Contracts de
-minter**. Bens Contracts soumet la transaction via le Paymaster ; la charge
-de validation et d'écriture est supportée par le réseau décentralisé.
+`TRANSACTION_AUDIT_LOGS` (`PENDING_MINT`, `tx_hash NULL`), répond `202`,
+puis **ordonne à Bens Contracts de minter**. Bens Contracts soumet la
+transaction via le Paymaster / SDK et renvoie un `tx_hash` (souvent encore
+pending côté explorateur) ; Core le persiste **sans** passer à `MINTED`.
 
 ### 3. Réconciliation (Sync)
 
-Bens Bridge détecte la transaction validée on-chain, rapproche
-`blockchain_tx_hash` avec l'audit (`status = MINTED`), puis publie un message
-dans RabbitMQ (`bens.webhook.outbox`). Le worker de synchronisation traite
-ces messages pour confirmer la vente au partenaire via webhook HMAC, à un
-rythme contrôlé (~200 confirmations/s), garantissant une mise à jour stable
-et fluide de leur base de données.
+Bens Bridge détecte le Mint **confirmé** on-chain (source de vérité) et
+publie dans RabbitMQ (`bens.mint.confirmations`). Bens Core consomme à
+rythme contrôlé (~200 confirmations/s), met l'audit à `MINTED`, puis notifie
+le partenaire via webhook HMAC — protégeant ainsi leur infrastructure SQL.
 
 ### 4. Revente sur le marché secondaire (valeur captée)
 
@@ -168,9 +168,10 @@ Lorsqu'un billet NFT est revendu, le smart contract Bens Contracts
 4. la vérification `max_tickets_per_user` (anti-bot) ;
 5. si le billet est SBT, le blocage de la revente.
 
-Bens Bridge détecte l'événement on-chain `Resale`, l'audite, et le reporte au
-dashboard organisateur. **L'organisateur voit ses royalties s'accumuler en
-temps réel** — valeur qui, sans BENS, serait partie aux scalpers.
+Bens Bridge détecte l'événement on-chain `Resale` et publie dans RabbitMQ ;
+Bens Core persiste `SECONDARY_SALES` et le dashboard organisateur agrège.
+**L'organisateur voit ses royalties s'accumuler en temps réel** — valeur
+qui, sans BENS, serait partie aux scalpers.
 
 ---
 

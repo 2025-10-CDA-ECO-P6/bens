@@ -107,9 +107,10 @@ idempotence).
 ### 2.7. SecondarySale
 
 **Preuve de captation de valeur** : chaque revente on-chain détectée par
-Bens Bridge est tracée ici. Le dashboard organisateur agrège ces lignes pour
-afficher les royalties perçues. **Aucun email** de vendeur/acheteur n'est
-stocké (discipline middleware — les contreparties restent anonymes côté BENS).
+BensBridge (via RabbitMQ) est **persistée par BensCore**. Le dashboard
+organisateur agrège ces lignes pour afficher les royalties perçues.
+**Aucun email** de vendeur/acheteur n'est stocké (discipline middleware —
+les contreparties restent anonymes côté BENS).
 
 | Propriété | Type conceptuel | Description |
 | :--- | :--- | :--- |

@@ -15,7 +15,7 @@
 | Merchant | `MERCHANTS` | Partenaires B2B |
 | Collaborator | `COLLABORATORS` | Accès dashboard (RBAC) |
 | BlacklistedIp | `BLACKLISTED_IPS` | Ban IP multi-tenant |
-| EventBridge | `EVENT_BRIDGES` | Bridge événement + adresse SC (stockée par Bens Contracts) |
+| EventBridge | `EVENT_BRIDGES` | Bridge événement + adresse SC (écrite par BensCore) |
 | EventSmartRules | `EVENT_SMART_RULES` | Règles ancrées dans le SC (1:1 avec `EVENT_BRIDGES`) |
 | TransactionAuditLog | `TRANSACTION_AUDIT_LOGS` | Audit paiement → mint |
 | SecondarySale | `SECONDARY_SALES` | **Preuve de captation de valeur** (royalties perçues) |
@@ -135,17 +135,22 @@ Journal d'audit paiement → mint (idempotence NFR-05, replay NFR-04).
 | `customer_email` | `VARCHAR(255)` | `NOT NULL` | Email acheteur (transport, mint initial) |
 | `payment_provider_ref` | `VARCHAR(255)` | `NOT NULL`, **UNIQUE** | Réf. paiement (dédoublonnage) |
 | `status` | `VARCHAR(32)` | `NOT NULL` | `PENDING_MINT` \| `MINTED` \| `FAILED` \| `REFUNDED` |
-| `blockchain_tx_hash` | `VARCHAR(255)` | `NULLABLE` | Hash MultiversX |
+| `blockchain_tx_hash` | `VARCHAR(255)` | `NULLABLE` | Hash MultiversX (`NULL` à l'INSERT paiement ; rempli après soumission mint ; `MINTED` seulement après conf Bridge→Core) |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, `DEFAULT CURRENT_TIMESTAMP` | Réception webhook paiement |
+
+> **Cycle de vie** (écrit **uniquement par BensCore**) :
+> 1. Webhook paiement → `INSERT` `PENDING_MINT`, `tx_hash NULL`
+> 2. Retour Contract → `UPDATE` `tx_hash`, statut reste `PENDING_MINT`
+> 3. Consume confirmation Bridge → `UPDATE` `MINTED`
 
 ---
 
 ## 7. `SECONDARY_SALES` (preuve de captation de valeur)
 
 **Table centrale pour l'argument n°1** : chaque revente on-chain détectée par
-Bens Bridge est tracée ici. Le dashboard organisateur agrège ces lignes pour
-afficher les royalties perçues. **Aucun email** de contrepartie n'est stocké
-(discipline middleware).
+BensBridge (publiée en RabbitMQ) est **persistée par BensCore**. Le dashboard
+organisateur agrège ces lignes pour afficher les royalties perçues.
+**Aucun email** de contrepartie n'est stocké (discipline middleware).
 
 | Colonne | Type SQL | Contraintes | Description |
 | :--- | :--- | :--- | :--- |
@@ -163,7 +168,8 @@ afficher les royalties perçues. **Aucun email** de contrepartie n'est stocké
 
 ## 8. `WEBHOOK_DISPATCHES` (table technique)
 
-Dispatch asynchrone des webhooks de réconciliation vers le partenaire.
+Dispatch asynchrone des webhooks de réconciliation vers le partenaire
+(**écrit et lu par BensCore uniquement**).
 
 | Colonne | Type SQL | Contraintes | Description |
 | :--- | :--- | :--- | :--- |

@@ -9,24 +9,21 @@ Source de vérité unique, alignée sur le board GitHub
 
 - **`BensCore`** (Spring Boot, Java 25 Virtual Threads) : verrouillage Redis
   (Lua), API B2B (CustomAuthFilter : clés API, IP whitelist, rate limiting),
-  **réception webhook paiement**, **écriture/maj `TRANSACTION_AUDIT_LOGS`**
-  (PENDING_MINT → MINTED), **orchestration du mint** (appelle BensContract,
-  récupère `tx_hash`), Dashboard organisateur, QR statique, socle générique,
-  MapStruct.
-- **`BensContract`** (Rust off-chain) : **crée/définit les SC** (règles,
-  royalties, NFT/SBT), **déploie les SC sur MultiversX**, **stocke les
-  IDs/adresses en BDD** (PostgreSQL partagé, table `EVENT_BRIDGES`),
-  **lance le mint** (invoque `mint()` sur MultiversX), **Paymaster** (gas
-  fees, Account Abstraction), Smart Wallet acheteur, Web3 Gateway.
-- **`BensBridge`** (Spring Boot) : **réconciliation des données uniquement**.
-  Écouteur blockchain (Mint/Transfer), rapprochement on-chain ↔ audit,
-  publication des succès de tx dans RabbitMQ, worker de synchronisation
-  (RabbitMQ → webhook VEL), WebhookDispatcher + WebhookSigner (HMAC sortant),
-  RetryPolicy persistant (DLQ). ReplayWorker (à définir).
+  **réception webhook paiement**, **seul accès PostgreSQL**,
+  **écriture/maj `TRANSACTION_AUDIT_LOGS`** (`PENDING_MINT` → hash → `MINTED`),
+  **orchestration du mint** (appelle BensContract), **consommation RabbitMQ**
+  (rythme contrôlé), **webhooks sortants HMAC**, Dashboard, QR statique,
+  socle générique, MapStruct.
+- **`BensContract`** (Rust + SDK MultiversX) : **crée/définit les SC**,
+  **déploie** sur MultiversX, **retourne** adresse SC à Core (pas de BDD),
+  **lance le mint**, **Paymaster**, Smart Wallet, Web3 Gateway.
+- **`BensBridge`** (Spring Boot) : **écoute on-chain uniquement**
+  (Mint/Transfer/Resale), **publie** les confirmations dans RabbitMQ.
+  Pas de PostgreSQL, pas de webhook partenaire.
 
-> BensCore appelle BensContract pour minter. BensBridge ne fait que
-> réconciliation/notification. BensCore écrit l'audit (pas BensBridge).
-> RabbitMQ est dans BensBridge pour les webhooks sortants (pas pour le mint).
+> BensCore appelle BensContract pour minter. Bridge publie les confirmations
+> on-chain ; Core consomme → `MINTED` + notifie. RabbitMQ = Bridge → Core
+> (confirmations), pas pour soumettre le mint. PostgreSQL = Core seul.
 
 ### Scope POC
 
@@ -119,7 +116,7 @@ Ticket GitHub : #1
 ## US 1.2 — Réaliser la modélisation conceptuelle et logique de la BDD (MCD/MLD)
 
 En tant que **développeur**, je veux produire le MCD et le MLD des 6 tables BENS,
-afin de définir le schéma PostgreSQL partagé.
+afin de définir le schéma PostgreSQL (accès BensCore uniquement).
 
 Critères d'acceptation :
 - MCD : `ORGANIZATIONS`, `USERS`, `EVENT_BRIDGES`, `EVENT_SMART_RULES`,
@@ -143,8 +140,8 @@ Critères d'acceptation :
 - `schema.sql` chargé par **BensCore** au démarrage
   (`spring.sql.init.mode=always`, `CREATE TABLE IF NOT EXISTS` idempotent)
 - `data.sql` : organisations, utilisateurs, bridges, règles de test
-- BensCore est responsable du `schema.sql` ; BensContract et BensBridge se
-  connectent au même PostgreSQL
+- BensCore est responsable du `schema.sql` ; BensContract et BensBridge
+  **n'ont pas** d'accès PostgreSQL
 - Scripts idempotents
 
 Specs : —
@@ -216,15 +213,15 @@ conception oublié (`architecture.md`) et formaliser le contrat technique
 (`specifications.md`).
 
 Critères d'acceptation :
-- `architecture.md` : 3 modules, PostgreSQL partagé, Redis, RabbitMQ (webhooks
-  sortants), appel BensCore → BensContract pour le mint
-- Diagrammes : composants, séquence (paiement → mint → webhook sortant),
+- `architecture.md` : 3 modules, PostgreSQL Core seul, Redis, RabbitMQ
+  (confirmations Bridge → Core), appel BensCore → BensContract pour le mint
+- Diagrammes : composants, séquence (paiement → mint → conf → webhook),
   déploiement
 - `specifications.md` : contrats API partenaire (lock/unlock/payment/statut),
   payloads, codes d'erreur, mapping SF/NFR, conventions Redis/RabbitMQ
 - Règles marché secondaire (plafond, royalties `BigDecimal`, SBT) documentées
-- Aligné sur les décisions actées (Paymaster dans BensContract, BensBridge =
-  réconciliation uniquement)
+- Aligné sur les décisions actées (Paymaster dans BensContract, Bridge =
+  écoute + publish MQ, Core = BDD + webhooks)
 
 Specs : —
 Composant : docs
@@ -374,13 +371,12 @@ BensContract, afin d'activer un bridge sans toucher à la blockchain.
 
 Critères d'acceptation :
 - `SmartContractDeployer` déploie le SC WASM avec les règles configurées
-- L'adresse du SC est persistée dans `EVENT_BRIDGES.smart_contract_address`
-  (PostgreSQL partagé)
-- `EVENT_BRIDGES.status` passe à `ACTIVE`
-- BensContract stocke les IDs/adresses en BDD (table `EVENT_BRIDGES`)
+- BensContract **retourne** l'adresse SC à BensCore (pas d'accès PostgreSQL)
+- BensCore persiste `EVENT_BRIDGES.smart_contract_address` et passe
+  `status` à `ACTIVE`
 
 Specs : SF-05
-Composant : BensContract
+Composant : BensContract (+ persistance BensCore)
 Estimation : 8
 Ticket GitHub : #12
 
@@ -450,8 +446,8 @@ Ticket GitHub : à créer
 # M4 — Mint, Audit & Notifications Asynchrones [BENS CORE + BENS BRIDGE]
 
 Sprint 5 (24/11 — 14/12/2026). Réception webhook paiement, écriture audit,
-orchestration du mint (BensCore) ; écouteur blockchain, réconciliation,
-webhooks sortants via RabbitMQ (BensBridge).
+orchestration du mint, consommation confirmations + webhooks sortants
+(BensCore) ; écouteur blockchain + publish RabbitMQ (BensBridge).
 
 ## US 4.1 — PaymentWebhookController + HMAC + Idempotence (BensCore)
 
@@ -489,16 +485,16 @@ Composant : BensCore/audit
 Estimation : 3
 Ticket GitHub : à créer
 
-## US 4.3 — MintOrchestrator : appel BensContract + maj audit (BensCore)
+## US 4.3 — MintOrchestrator : appel BensContract + persistance tx_hash (BensCore)
 
 En tant que **système**, je veux que BensCore orchestre le mint en appelant
-BensContract et mette à jour l'audit, afin de finaliser la transaction.
+BensContract et persiste le `tx_hash`, sans marquer `MINTED` (finalité = chaîne).
 
 Critères d'acceptation :
 - `MintOrchestrator` (BensCore) appelle `BensContract.MintService.mint(...)`
-- Récupère le `tx_hash` retourné par BensContract
-- `TRANSACTION_AUDIT_LOGS` mis à jour : `status = 'MINTED'`,
-  `blockchain_tx_hash = <hash>`
+- Récupère le `tx_hash` retourné par BensContract (souvent pending explorateur)
+- `TRANSACTION_AUDIT_LOGS` mis à jour : `blockchain_tx_hash = <hash>`,
+  **`status` reste `PENDING_MINT`**
 - Idempotence : pas de mint si `blockchain_tx_hash` déjà non NULL pour ce
   `transaction_id`
 
@@ -541,51 +537,52 @@ Composant : BensCore/dashboard
 Estimation : 3
 Ticket GitHub : à créer
 
-## US 4.6 — Écouteur d'événements blockchain en temps réel (BensBridge)
+## US 4.6 — Écouteur d'événements blockchain (BensBridge)
 
-En tant que **système**, je veux que BensBridge écoute les événements `Mint` et
-`Transfer` on-chain, afin de réconcilier l'état BENS avec la blockchain.
+En tant que **système**, je veux que BensBridge écoute les événements `Mint`,
+`Transfer` et `Resale` confirmés on-chain, afin d'alimenter RabbitMQ
+(source de vérité = chaîne).
 
 Critères d'acceptation :
-- Écouteur (WebSocket/polling provider MultiversX) capte `Mint` et `Transfer`
-  des SC déployés
-- Chaque événement est rapproché d'une `TRANSACTION_AUDIT_LOGS` via
-  `transaction_id`
-- En cas de mint confirmé on-chain non vu par l'orchestrateur, l'audit est mis
-  à jour (`MINTED` + `tx_hash`)
-- En cas de divergence (statut BENS ≠ statut on-chain), une alerte est levée
+- Écouteur (WebSocket/polling provider MultiversX) capte les événements des
+  SC déployés
+- Aucun accès PostgreSQL depuis BensBridge
+- Chaque événement confirmé est publié dans RabbitMQ (payload avec
+  `transaction_id` / `tx_hash` / type d'événement)
+- Pas d'envoi de webhook partenaire depuis Bridge
 
 Specs : SF-05, NFR-04
 Composant : BensBridge/listener
 Estimation : 8
 Ticket GitHub : à créer
 
-## US 4.7 — Configuration RabbitMQ pour webhooks sortants (BensBridge)
+## US 4.7 — Configuration RabbitMQ confirmations (Bridge → Core)
 
-En tant que **système**, je veux une topologie RabbitMQ pour les webhooks
-sortants, afin de gérer les retries et les échecs de notification VEL.
+En tant que **système**, je veux une topologie RabbitMQ pour les confirmations
+on-chain, afin que BensCore les consomme à rythme contrôlé.
 
 Critères d'acceptation :
-- Exchange `bens.webhooks` (topic) créé au démarrage
-- Queue `bens.webhook.outbox` créée avec binding
-- DLQ `bens.webhook.dlq` créée
-- Politique de retry : 1s, 5s, 30s, 5min, puis DLQ après 4 tentatives
-- RabbitMQ est dans BensBridge pour les webhooks sortants (pas pour le mint)
+- Exchange `bens.confirmations` (topic) créé au démarrage
+- Queue `bens.mint.confirmations` créée avec binding
+- DLQ `bens.mint.confirmations.dlq` créée
+- Routing key `confirm.{org_id}.{event_id}`
+- Producteur = BensBridge ; consommateur = BensCore
+- Pas de RabbitMQ pour soumettre le mint (appel Core → Contract)
 
 Specs : SF-05
-Composant : BensBridge/messaging
+Composant : BensBridge/messaging + BensCore/messaging
 Estimation : 3
 Ticket GitHub : à créer
 
-## US 4.8 — WebhookDispatcher + WebhookSigner sortant (BensBridge)
+## US 4.8 — WebhookDispatcher + WebhookSigner sortant (BensCore)
 
-En tant que **système**, je veux que BensBridge dispatcher un webhook de
-réconciliation signé au partenaire après mint, afin qu'il mette à jour sa
-billetterie Web2.
+En tant que **système**, je veux que BensCore dispatcher un webhook de
+réconciliation signé au partenaire après mint confirmé, afin qu'il mette à
+jour sa billetterie Web2.
 
 Critères d'acceptation :
-- Après un mint confirmé (`status = 'MINTED'`), `WebhookDispatcher` envoie le
-  webhook à `target_url`
+- Après passage à `status = 'MINTED'`, `WebhookDispatcher` envoie le webhook
+  à `target_url`
 - Payload : transaction_id, event_bridge_id, external_seat_id, token_id,
   blockchain_tx_hash
 - Header `X-BENS-Signature: sha256=<hmac>` (clé de l'org, jamais loggée)
@@ -593,28 +590,32 @@ Critères d'acceptation :
 - Sur `2xx` reçu, `status = 'DELIVERED'`
 
 Specs : SF-05, NFR-05
-Composant : BensBridge/outbound
+Composant : BensCore/outbound
 Estimation : 5
 Ticket GitHub : à créer
 
-## US 4.9 — Worker de synchronisation RabbitMQ → webhook VEL (BensBridge)
+## US 4.9 — ConfirmationConsumer RabbitMQ → MINTED + webhook (BensCore)
 
-En tant que **système**, je veux un worker qui consomme `bens.webhook.outbox`
-et envoie les webhooks, afin de découpler l'envoi du mint.
+En tant que **système**, je veux un consumer Core qui traite
+`bens.mint.confirmations` à rythme contrôlé, afin de finaliser l'audit et
+notifier le partenaire sans saturer ses serveurs.
 
 Critères d'acceptation :
-- Le worker consomme les messages de `bens.webhook.outbox`
-- Il appelle `WebhookDispatcher` pour chaque message
-- Si l'envoi échoue, le message est nack et retry (1s, 5s, 30s, 5min)
-- Après 4 échecs, le message va en DLQ
+- Le consumer consomme `bens.mint.confirmations` avec rate limiting
+  (~200 conf/s configurable)
+- Sur confirmation Mint : `UPDATE status = 'MINTED'` puis appel
+  `WebhookDispatcher`
+- Sur confirmation Resale : `INSERT SECONDARY_SALES`
+- Si l'envoi webhook échoue : retry (1s, 5s, 30s, 5min) puis DLQ /
+  `WEBHOOK_DISPATCHES.status = FAILED`
 - L'achat € côté utilisateur n'est jamais bloqué (NFR-06)
 
 Specs : SF-05, NFR-05, NFR-06
-Composant : BensBridge/worker
+Composant : BensCore/worker
 Estimation : 5
 Ticket GitHub : à créer
 
-## US 4.10 — RetryPolicy + ReplayWorker (à définir) (BensBridge)
+## US 4.10 — RetryPolicy + ReplayWorker (à définir) (BensCore)
 
 En tant que **système**, je veux une politique de retry et un worker de replay,
 afin de garantir qu'aucune transaction payée ne reste non mintée ni non
@@ -623,13 +624,12 @@ notifiée.
 Critères d'acceptation :
 - Sur échec de livraison webhook avec `retry_count < 3`, le webhook est
   replanifié (1s, 10s, 60s) ; après 3 échecs, `status = 'FAILED'` + DLQ
-- `ReplayWorker` (à définir) : périmètre exact à préciser (resélection des
-  `TRANSACTION_AUDIT_LOGS` en `PENDING_MINT` ? resoumission des webhooks
-  échoués ?). Marqué **à définir** en attente de décision architecture.
+- `ReplayWorker` (à définir) : resoumission mint pour `PENDING_MINT` sans
+  `tx_hash` trop anciens ; resoumission webhooks échoués
 - Idempotence garantie (pas de double mint ni double webhook)
 
 Specs : NFR-04, NFR-05
-Composant : BensBridge/outbound + worker
+Composant : BensCore/outbound + worker
 Estimation : 5
 Ticket GitHub : à créer
 
@@ -745,7 +745,7 @@ PostgreSQL + Redis + RabbitMQ, afin d'avoir un environnement reproductible.
 Critères d'acceptation :
 - `docker-compose.yml` : BensCore, BensContract, BensBridge, PostgreSQL,
   Redis, RabbitMQ
-- Volume partagé pour le PostgreSQL commun
+- Volume PostgreSQL (accès BensCore uniquement)
 - Healthchecks sur chaque service
 - Démarrage en une commande `docker compose up`
 

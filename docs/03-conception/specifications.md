@@ -11,7 +11,7 @@
 Ce document formalise :
 
 1. Les **contrats d'API partenaire** (payloads, HTTP, codes d'erreur).
-2. Le **webhook sortant** de réconciliation (BensBridge → partenaire).
+2. Le **webhook sortant** de réconciliation (BensCore → partenaire).
 3. Les **conventions Redis** et **RabbitMQ**.
 4. Le **mapping SF/NFR → composants**.
 5. Les **règles marché secondaire** (captation de valeur — argument n°1).
@@ -224,9 +224,10 @@ Statut d'une transaction d'audit.
 
 ---
 
-## 4. Webhook sortant de réconciliation (BensBridge → partenaire)
+## 4. Webhook sortant de réconciliation (BensCore → partenaire)
 
-Publié via RabbitMQ `bens.webhook.outbox` après détection on-chain / réconciliation.
+Envoyé par **BensCore** après consommation d'une confirmation Bridge
+(`bens.mint.confirmations`) et passage de l'audit à `MINTED`.
 
 **Headers**
 
@@ -268,7 +269,7 @@ Publié via RabbitMQ `bens.webhook.outbox` après détection on-chain / réconci
 
 > Aucun email de contrepartie dans le payload revente (discipline middleware).
 
-**Attentes partenaire** : répondre `2xx` rapidement. Sinon retries BensBridge
+**Attentes partenaire** : répondre `2xx` rapidement. Sinon retries **BensCore**
 (1s, 5s, 30s, 5min) puis DLQ + `WEBHOOK_DISPATCHES.status = FAILED`.
 
 ---
@@ -304,17 +305,20 @@ return 1    -- → 200
 ## 6. Conventions RabbitMQ
 
 
-| Élément     | Valeur                                          |
-| ----------- | ----------------------------------------------- |
-| Exchange    | `bens.webhooks` (topic)                         |
-| Queue       | `bens.webhook.outbox`                           |
-| DLQ         | `bens.webhook.dlq`                              |
-| Routing key | `webhook.{org_id}.{event_id}`                   |
-| Retry       | 1s → 5s → 30s → 5min → DLQ (après 4 tentatives) |
-| Module      | **BensBridge uniquement**                       |
+| Élément      | Valeur                                            |
+| ------------ | ------------------------------------------------- |
+| Exchange     | `bens.confirmations` (topic)                      |
+| Queue        | `bens.mint.confirmations`                         |
+| DLQ          | `bens.mint.confirmations.dlq`                     |
+| Routing key  | `confirm.{org_id}.{event_id}`                     |
+| Retry        | 1s → 5s → 30s → 5min → DLQ (après 4 tentatives)   |
+| Producteur   | **BensBridge**                                    |
+| Consommateur | **BensCore** (rate-limité ~200 conf/s)            |
 
 
-**Interdit** : queue de mint. Le mint est un appel HTTP BensCore → BensContract.
+**Interdit** : queue pour **soumettre** le mint. Le mint est un appel HTTP
+BensCore → BensContract. RabbitMQ porte uniquement les **confirmations**
+on-chain (et reventes) Bridge → Core.
 
 ---
 
@@ -352,8 +356,8 @@ contrainte      : prix_revente ≤ plafond_revente
 | `event_bridge_id`    | Bridge concerné                  |
 
 
-Écrit par **BensBridge** à la détection d'un événement Resale. Agrégé par le
-dashboard organisateur.
+Écrit par **BensCore** après consommation d'une confirmation Resale publiée
+par BensBridge. Agrégé par le dashboard organisateur.
 
 ---
 
@@ -382,8 +386,8 @@ dashboard organisateur.
 | **NFR-01** | Latence verrou       | BensCore / Redis      | p99 < 2 ms                  |
 | **NFR-02** | Débit                | BensCore              | ≥ 10 000 req/s              |
 | **NFR-03** | Isolation BDD        | BensCore              | 0 écriture SQL pendant lock |
-| **NFR-04** | Tolérance aux pannes | BensBridge            | Replay + DLQ                |
-| **NFR-05** | Idempotence          | BensCore + BensBridge | UUID + UNIQUE refs          |
+| **NFR-04** | Tolérance aux pannes | BensCore              | Replay + DLQ                |
+| **NFR-05** | Idempotence          | BensCore              | UUID + UNIQUE refs          |
 | **NFR-06** | Web3 non bloquant    | BensCore              | Achat € → `202` immédiat    |
 | **NFR-07** | Immuabilité règles   | BensContract          | Royalties/plafond ancrés SC |
 
@@ -405,9 +409,10 @@ dashboard organisateur.
 
 | Appel                                    | De → Vers               | Rôle                                       |
 | ---------------------------------------- | ----------------------- | ------------------------------------------ |
-| `DeployService.deploy(bridge_id, rules)` | BensCore → BensContract | Déploie SC, écrit `smart_contract_address` |
-| `MintService.mint(transaction_id, …)`    | BensCore → BensContract | Mint NFT/SBT, retourne `tx_hash`           |
-| Écoute Mint / Transfer / Resale          | MultiversX → BensBridge | Réconciliation + outbox                    |
+| `DeployService.deploy(bridge_id, rules)` | BensCore → BensContract | Déploie SC, **retourne** adresse → Core écrit BDD |
+| `MintService.mint(transaction_id, …)`    | BensCore → BensContract | Mint NFT/SBT, retourne `tx_hash` (pending OK)     |
+| Écoute Mint / Transfer / Resale          | MultiversX → BensBridge | Publish `bens.mint.confirmations`                 |
+| Consume confirmation                     | RabbitMQ → BensCore     | `MINTED` / `SECONDARY_SALES` + webhook HMAC       |
 
 
 
