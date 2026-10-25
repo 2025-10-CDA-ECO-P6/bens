@@ -90,16 +90,16 @@ BENS **ne doit pas** :
 ### 1.2. Stack technique complète
 
 
-| Couche             | Technologie                                             | Version / contrainte                              |
-| ------------------ | ------------------------------------------------------- | ------------------------------------------------- |
-| Langage backend    | **Java**                                                | **25** (LTS) — Virtual Threads (Project Loom)     |
-| Framework backend  | **Spring Boot**                                         | **4+**                                            |
-| Frontend dashboard | **Angular**                                             | **18+**                                           |
-| Blockchain         | **MultiversX** / **Rust**                               | Smart Contracts + Account Abstraction (Paymaster) |
-| Cache / verrous    | **Redis**                                               | Cluster + scripts Lua atomiques                   |
-| Broker de messages | **RabbitMQ**                                            | Exchange topic + DLQ                              |
-| Base relationnelle | **PostgreSQL**                                          | Audit, config bridges, webhooks (UUID PK)         |
-| Style              | Middleware API-First, **stateless**, Event-Driven (EDA) | —                                                 |
+| Couche             | Technologie                                             | Version / contrainte                                                      |
+| ------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Langage backend    | **Java**                                                | **25** (LTS, Oracle SE) — Virtual Threads (Project Loom)                    |
+| Framework backend  | **Spring Boot**                                         | **4.1** (ligne OSS supportée ; Spring n'a pas de label LTS officiel)        |
+| Frontend dashboard | **Angular**                                             | **21** (LTS)                                                                |
+| Blockchain         | **MultiversX** / **Rust**                               | Smart Contracts + Account Abstraction (Paymaster)                         |
+| Cache / verrous    | **Redis**                                               | Cluster + scripts Lua atomiques                                             |
+| Broker de messages | **RabbitMQ**                                            | Exchange topic + DLQ                                                        |
+| Base relationnelle | **PostgreSQL**                                          | **17** (majeure supportée communauté, ~5 ans) — UUID PK                     |
+| Style              | Middleware API-First, **stateless**, Event-Driven (EDA) | —                                                                           |
 
 
 > Cette stack est **normative** pour le dépôt. Toute divergence doit être justifiée et mise à jour ici.
@@ -455,7 +455,7 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | Cahier des charges + diagramme de séquence Core → Contracts → Bridge             | §§ 0–2 (expression du besoin, architecture 3 MS, Mermaid § 2.1) |
 | Spec flux réservation atomique (Lock Redis) + royalties B2B (`BigDecimal`)       | §§ 3.1.1 et 3.3.1                                               |
-| Stack complète Java 25, Spring Boot 4+, Angular 18+, MultiversX, Redis, RabbitMQ | § 1.2                                                           |
+| Stack complète Java 25 (LTS), Spring Boot 4.1, Angular 21 (LTS), MultiversX, Redis, RabbitMQ, PostgreSQL 17 | § 1.2                                                           |
 | Documentation validée dans `/docs`                                               | `docs/01-contexte/cahier-des-charges.md`                        |
 
 

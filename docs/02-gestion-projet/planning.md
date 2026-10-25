@@ -7,7 +7,7 @@ Source de vérité unique, alignée sur le board GitHub
 
 ### Modules (3)
 
-- **`BensCore`** (Spring Boot, Java 25 Virtual Threads) : verrouillage Redis
+- **`BensCore`** (Spring Boot 4.1, Java 25 LTS Virtual Threads) : verrouillage Redis
   (Lua), API B2B (CustomAuthFilter : clés API, IP whitelist, rate limiting),
   **réception webhook paiement**, **seul accès PostgreSQL**,
   **écriture/maj `TRANSACTION_AUDIT_LOGS`** (`PENDING_MINT` → hash → `MINTED`),
@@ -46,9 +46,9 @@ bis. Aucune table `events/seats/categories/prices/orders` côté BENS.
 
 ### Stack
 
-Java 25 / Spring Boot 4 (Virtual Threads) / Redis / RabbitMQ / PostgreSQL /
-MultiversX (Rust SC). Monorepo Maven 3 modules. Pas de Flyway (`schema.sql` +
-Spring Boot). Dockerisation en Sprint 6.
+Java 25 (LTS) / Spring Boot 4.1 (Virtual Threads) / Angular 21 (LTS) / Redis /
+RabbitMQ / PostgreSQL 17 / MultiversX (Rust SC). Monorepo Maven 3 modules.
+Pas de Flyway (`schema.sql` + Spring Boot). Dockerisation en Sprint 6.
 
 ---
 
@@ -156,7 +156,7 @@ modules, afin de partager le build et isoler les responsabilités.
 
 Critères d'acceptation :
 - 3 modules compilent avec `./mvnw clean install`
-- `pom.xml` parent (Spring Boot 4, Java 25) ; `BensContract` = workspace Cargo
+- `pom.xml` parent (Spring Boot 4.1, Java 25 LTS) ; `BensContract` = workspace Cargo
 - `BaseEntity` (id UUID, created_at, updated_at), `BaseRepository`,
   `BaseController` (CRUD générique) réutilisables
 - `.gitignore` (target/, IDE, .env)
@@ -254,7 +254,7 @@ Ticket GitHub : #40
 
 Sprint 3 (13/10 — 02/11/2026). Virtual Threads, Redis, verrous Lua, rate limiting.
 
-## US 2.1 — Activer les Threads Virtuels Java 25 dans Spring Boot 4
+## US 2.1 — Activer les Threads Virtuels Java 25 dans Spring Boot 4.1
 
 En tant que **développeur**, je veux activer les Virtual Threads et connecter
 Redis, afin de préparer la haute concurrence.

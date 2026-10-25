@@ -46,7 +46,7 @@ chaque revente** en ancrant des royalties dans un smart contract immuable —
 
 ## Architecture et Services
 
-### Bens Core (Java 25 / Spring Boot 4)
+### Bens Core (Java 25 LTS / Spring Boot 4.1)
 
 Le centre de commande du middleware, qui pilote l'interaction avec le
 partenaire et orchestre la certification.
@@ -65,7 +65,7 @@ partenaire et orchestre la certification.
   Bens Contracts.
 - **ConfirmationConsumer** : consomme RabbitMQ à rythme contrôlé, passe
   l'audit à `MINTED`, envoie les **webhooks sortants HMAC** au partenaire.
-- **Dashboard organisateur (Angular 18+)** : configuration des bridges,
+- **Dashboard organisateur (Angular 21 LTS)** : configuration des bridges,
   déploiement du smart contract, suivi des transactions et **suivi des
   royalties perçues** sur le marché secondaire, RBAC
   (Merchant ↔ `ORGANIZATIONS`, Collaborator ↔ `USERS`).
@@ -97,7 +97,7 @@ d'abstraction Web3 (SDK MultiversX) — **cœur de la captation de valeur**.
 - **Smart Wallet acheteur** : création de wallet via email/téléphone (xPortal),
   masquée derrière le Paymaster.
 
-### Bens Bridge (Java 25 / Spring Boot 4) & RabbitMQ
+### Bens Bridge (Java 25 LTS / Spring Boot 4.1) & RabbitMQ
 
 L'**oreille on-chain** : détecte la finalité, publie vers Core — pas de BDD,
 pas de webhook partenaire.
@@ -269,12 +269,12 @@ blockchain.
 
 | Couche | Technologie |
 | :--- | :--- |
-| Backend | **Java 25**, **Spring Boot 4** (Virtual Threads / Project Loom) |
-| Frontend dashboard | **Angular 18+** |
+| Backend | **Java 25** (LTS), **Spring Boot 4.1** (Virtual Threads / Project Loom) |
+| Frontend dashboard | **Angular 21** (LTS) |
 | Blockchain | **MultiversX** (Smart Contracts en **Rust**) |
 | Cache & Concurrency | **Redis** (scripts Lua atomiques) |
 | Message Broker | **RabbitMQ** (exchange topic + DLQ) |
-| Base relationnelle | **PostgreSQL** (audit, config bridges, webhooks) |
+| Base relationnelle | **PostgreSQL 17** (audit, config bridges, webhooks) |
 | Intégration | SDK MultiversX Java, Webhooks JSON API, HMAC |
 
 > Stack **normative** pour le dépôt. Toute divergence doit être justifiée et

@@ -2,7 +2,7 @@
 
 > **Référence US 1.2** — Dérivation du MCD en tables relationnelles
 > Clés primaires **UUID**, clés étrangères, contraintes d'**unicité**.
-> SGBD cible : **PostgreSQL**.
+> SGBD cible : **PostgreSQL 17**.
 > **Argument n°1** : la table `SECONDARY_SALES` trace les royalties perçues
 > sur le marché secondaire (captation de valeur).
 

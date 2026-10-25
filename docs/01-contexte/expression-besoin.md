@@ -198,8 +198,9 @@ BENS **ne doit pas** :
 
 ### 5.1. Contraintes techniques
 
-- **Stack imposée** : Java 25 / Spring Boot 4 / Angular 18+ / MultiversX
-  (Rust) / Redis / RabbitMQ / PostgreSQL. Voir `cahier-des-charges.md` §1.2.
+- **Stack imposée** : Java 25 (LTS) / Spring Boot 4.1 / Angular 21 (LTS) /
+  MultiversX (Rust) / Redis / RabbitMQ / PostgreSQL 17. Voir
+  `cahier-des-charges.md` §1.2.
 - **Pas de Flyway** : schéma géré via `schema.sql` + Spring Boot.
 - **Pas de cryptomonnaie côté fan** : Account Abstraction + Paymaster obligatoires.
 - **Pas de slug / nom d'événement dans Redis** : clés Redis au format

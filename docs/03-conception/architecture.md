@@ -28,7 +28,7 @@ BensBridge n'ont pas d'accès BDD.
 ```text
 ┌──────────────────────┐      HTTP       ┌──────────────────────┐
 │      BensCore        │ ──────────────────► │    BensContract      │
-│  Java 25 / SB 4      │   (mint / deploy)   │  Rust + SDK MX      │
+│  Java 25 / SB 4.1    │   (mint / deploy)   │  Rust + SDK MX      │
 │                      │                     │                      │
 │  • API lock/unlock   │                     │  • Déploiement SC    │
 │  • Redis Lua         │                     │  • Mint NFT/SBT      │
@@ -43,7 +43,7 @@ BensBridge n'ont pas d'accès BDD.
            │                                            │ events
     ┌──────┴──────┐                          ┌──────────┴───────────┐
     │ Partenaire  │                          │     BensBridge       │
-    │ Web2        │                          │  Java 25 / SB 4      │
+    │ Web2        │                          │  Java 25 / SB 4.1    │
     │ (VEL…)      │                          │                      │
     └─────────────┘                          │  • Écouteur chain    │
            ▲                                 │  • Publish RabbitMQ  │
@@ -84,12 +84,12 @@ BensBridge n'ont pas d'accès BDD.
 
 | Couche | Technologie | Contrainte |
 | :--- | :--- | :--- |
-| Backend Core / Bridge | Java **25**, Spring Boot **4+**, Virtual Threads | LTS / Loom |
+| Backend Core / Bridge | Java **25** (LTS), Spring Boot **4.1**, Virtual Threads | LTS / Loom |
 | Backend Contracts | **Rust** (off-chain) + SDK / SC MultiversX | Workspace Cargo |
-| Dashboard | Angular **18+** | RBAC organisateur |
+| Dashboard | Angular **21** (LTS) | RBAC organisateur |
 | Cache / verrous | **Redis** + scripts Lua | TTL 10 min |
 | Broker | **RabbitMQ** (topic + DLQ) | Confirmations Bridge → Core |
-| BDD | **PostgreSQL** (UUID PK) | Accès **BensCore uniquement** |
+| BDD | **PostgreSQL 17** (UUID PK) | Accès **BensCore uniquement** |
 | Intégration | Webhooks JSON + HMAC, SDK MultiversX | DX partenaire |
 
 ---
@@ -418,10 +418,10 @@ flowchart LR
 
 | Service | Image / runtime | Ports | Dépendances |
 | :--- | :--- | :--- | :--- |
-| `bens-core` | JVM Spring Boot 4 | 8080 | PostgreSQL, Redis, RabbitMQ, BensContract |
+| `bens-core` | JVM Spring Boot 4.1 | 8080 | PostgreSQL, Redis, RabbitMQ, BensContract |
 | `bens-contract` | Rust binary | 8081 | MultiversX (pas de PostgreSQL) |
-| `bens-bridge` | JVM Spring Boot 4 | 8082 | RabbitMQ, MultiversX (pas de PostgreSQL) |
-| `postgres` | PostgreSQL 16 | 5432 | Volume `pgdata` |
+| `bens-bridge` | JVM Spring Boot 4.1 | 8082 | RabbitMQ, MultiversX (pas de PostgreSQL) |
+| `postgres` | PostgreSQL 17 | 5432 | Volume `pgdata` |
 | `redis` | Redis 7 | 6379 | — |
 | `rabbitmq` | RabbitMQ 3 + management | 5672 / 15672 | — |
 
