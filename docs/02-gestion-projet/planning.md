@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Source de vérité unique, alignée sur le board GitHub
+Aligné sur le board GitHub
 [`2025-10-CDA-ECO-P6/bens`](https://github.com/2025-10-CDA-ECO-P6/bens/issues).
 
 ### Modules (3)
@@ -29,15 +29,15 @@ Source de vérité unique, alignée sur le board GitHub
 
 | Spec | Statut | Composant |
 | --- | --- | --- |
-| SF-01 Verrou Redis Lua < 2 ms | ✅ | BensCore |
-| SF-02 TTL 10 min | ✅ | BensCore |
-| SF-03 Anti-overbooking 200/409 | ✅ | BensCore |
-| SF-05 Mint asynchrone | ✅ | BensCore (orchestre) → BensContract (mint) |
-| SF-06 Paymaster / Account Abstraction | ✅ | BensContract |
-| SF-07 QR code | ⚠️ statique | BensCore |
-| SF-09 Règles de revente | ✅ | BensContract (SC) + BensCore (dashboard) |
-| SF-10 SBT intransférable | ✅ | BensContract |
-| NFR-01 à NFR-06 | ✅ | BensCore / BensBridge |
+| SF-01 Verrou Redis Lua < 2 ms | inclus | BensCore |
+| SF-02 TTL 10 min | inclus | BensCore |
+| SF-03 Anti-overbooking 200/409 | inclus | BensCore |
+| SF-05 Mint asynchrone | inclus | BensCore (orchestre) → BensContract (mint) |
+| SF-06 Paymaster / Account Abstraction | inclus | BensContract |
+| SF-07 QR code | partiel (statique) | BensCore |
+| SF-09 Règles de revente | inclus | BensContract (SC) + BensCore (dashboard) |
+| SF-10 SBT intransférable | inclus | BensContract |
+| NFR-01 à NFR-06 | inclus | BensCore / BensBridge |
 
 ### Discipline middleware
 
@@ -323,8 +323,9 @@ Critères d'acceptation :
 - Aspect AOP lit le seuil (par défaut ou par org) et délègue au compteur Lua
   de US 2.3
 - Au-delà du seuil → `429` + `{ "code": "RATE_LIMIT_EXCEEDED", "retry_after": <s> }`
-- Scénario k6 : 1 000 sièges, 5 000 VU simultanés → exactement 1 000 `200`,
-  4 000 `409`, **0 overbooking**, p99 < 2 ms, débit ≥ 10 000 req/s
+- Scénario de concurrence : 1 000 sièges, 5 000 utilisateurs virtuels
+  simultanés → exactement 1 000 `200`, 4 000 `409`, **0 overbooking**,
+  p99 < 2 ms, débit ≥ 10 000 req/s
 
 Specs : NFR-01, NFR-02, SF-03
 Composant : BensCore
@@ -638,7 +639,8 @@ Ticket GitHub : à créer
 # M5 — Marché secondaire, Recette & Clôture CDA [TOUS]
 
 Sprint 6 (15/12/2026 — 15/01/2027). Marché secondaire (BensContract SC +
-BensCore dashboard), QR statique, recette k6, Dockerisation, preuves CDA.
+BensCore dashboard), QR statique, recette de charge / performance,
+Dockerisation, preuves CDA.
 
 ## US 5.1 — Appliquer les règles de marché secondaire on-chain (BensContract)
 
@@ -689,14 +691,14 @@ Composant : BensCore
 Estimation : 3
 Ticket GitHub : à créer
 
-## US 5.4 — Recette k6 : bench performance (anti-overbooking)
+## US 5.4 — Recette de charge : bench performance (anti-overbooking)
 
-En tant que **développeur**, je veux un scénario k6 de charge, afin de valider
-l'anti-overbooking et la latence cible.
+En tant que **développeur**, je veux un scénario de concurrence / campagne de
+charge, afin de valider l'anti-overbooking et la latence cible.
 
 Critères d'acceptation :
 - 1 000 sièges pour un `event_id`
-- 5 000 VU tentent de verrouiller simultanément
+- 5 000 utilisateurs virtuels tentent de verrouiller simultanément
 - Exactement 1 000 verrous accordés (`200`), 4 000 refus (`409`)
 - **0 overbooking**, p99 < 2 ms, débit ≥ 10 000 req/s
 
@@ -705,10 +707,10 @@ Composant : BensCore
 Estimation : 5
 Ticket GitHub : à créer
 
-## US 5.5 — Recette k6 : crash-test (résilience mint + webhooks)
+## US 5.5 — Recette de résilience : crash-test (mint + webhooks)
 
-En tant que **développeur**, je veux un scénario k6 de crash-test, afin de
-valider la résilience du mint et des webhooks sortants.
+En tant que **développeur**, je veux un scénario de crash-test / résilience,
+afin de valider la résilience du mint et des webhooks sortants.
 
 Critères d'acceptation :
 - Simulation d'indisponibilité VEL (webhook sortant) → retry puis DLQ
@@ -721,10 +723,11 @@ Composant : BensCore + BensBridge
 Estimation : 8
 Ticket GitHub : à créer
 
-## US 5.6 — Recette k6 : scénario de revente (marché secondaire)
+## US 5.6 — Recette de charge : scénario de revente (marché secondaire)
 
-En tant que **développeur**, je veux un scénario k6 de revente, afin de valider
-les règles on-chain (plafond, royalties, SBT, max_tickets).
+En tant que **développeur**, je veux un scénario de charge / non-régression
+revente, afin de valider les règles on-chain (plafond, royalties, SBT,
+max_tickets).
 
 Critères d'acceptation :
 - Revente au-dessus du plafond rejetée

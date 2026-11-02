@@ -1,12 +1,5 @@
 # Expression de Besoin — Projet BENS
 
-> **Livrable CDA** — Document autonome d'expression de besoin, centré sur le
-> **quoi** et le **pourquoi**. Les spécifications techniques détaillées
-> (SF/NFR, MLD, recette) sont dans [`cahier-des-charges.md`](./cahier-des-charges.md).
-> La vision produit dans [`vision.md`](./vision.md).
-
----
-
 ## 1. Contexte et problématique
 
 ### 1.1. La valeur perdue du marché secondaire
@@ -158,7 +151,7 @@ chaîne, **sans exposer la complexité Web3** aux équipes partenaires.
   RabbitMQ ; BensCore consomme à rythme contrôlé, passe à `MINTED` et envoie
   les webhooks sortants HMAC (dont reporting reventes au dashboard).
 - QR statique (scope POC SF-07).
-- Recette de charge k6 (5 000 clics simultanés, crash-test Redis, revente).
+- Recette de charge (5 000 clics simultanés, crash-test Redis, revente).
 
 ### 4.2. Hors scope (discipline middleware)
 
@@ -218,7 +211,7 @@ BENS **ne doit pas** :
 - Projet de **certification CDA** (Concevoir et Développer une Application).
 - POC livré sur 6 sprints (01/09/2026 → 15/01/2027), voir
   [`planning.md`](../02-gestion-projet/planning.md).
-- Recette k6 obligatoire (charge, crash-test, revente).
+- Recette de charge / performance obligatoire (campagne de charge, crash-test, revente).
 - Dockerisation au Sprint 6.
 - Dossier de preuves CDA à constituer, voir skill `bens-preuves-cda`.
 
@@ -231,7 +224,7 @@ BENS **ne doit pas** :
 | Fonctionnalité | Test | Résultat attendu |
 | :--- | :--- | :--- |
 | **Captation de royalties** | Revente entre deux utilisateurs via le SC | Royalty calculée en `BigDecimal`, créditée automatiquement à l'organisateur, plafond respecté |
-| Bench de charge | k6 : 5 000 clics simultanés sur 1 000 sièges | 1 000 × `200 OK`, 4 000 × `409`, **0 overbooking**, p99 < 2 ms |
+| Bench de charge | Campagne de charge : 5 000 clics simultanés sur 1 000 sièges | 1 000 × `200 OK`, 4 000 × `409`, **0 overbooking**, p99 < 2 ms |
 | Crash-test Redis | Interruption Redis pendant un drop | Aucune transaction financière corrompue ; annulation propre des paniers non payés |
 | Revente marché secondaire | Revente entre deux utilisateurs | Billet réémis, royalties créditées à l'organisateur, plafond respecté |
 
@@ -240,7 +233,7 @@ BENS **ne doit pas** :
 - 3 microservices dockerisés (Bens Core, Bens Contracts, Bens Bridge).
 - Documentation : vision, expression de besoin, cahier des charges, MCD/MLD,
   planning, sécurité, tests, déploiement, écoconception.
-- Recette k6 exécutée et rapportée.
+- Recette de charge / performance exécutée et rapportée.
 - Dossier de preuves CDA constitué.
 
 ---

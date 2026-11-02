@@ -1,9 +1,6 @@
 # Architecture technique — Projet BENS
 
-> **Référence US 1.7** — Document d'architecture distribuée  
-> **Source de vérité métier** : [`../01-contexte/cahier-des-charges.md`](../01-contexte/cahier-des-charges.md)  
-> **Principe** : middleware transmetteur de messages + forgeur de NFT/SBT —
-> **jamais une billetterie bis**.
+> Middleware transmetteur de messages + forgeur de NFT/SBT — **jamais une billetterie bis**.
 
 ---
 
@@ -418,15 +415,13 @@ flowchart LR
 
 | Service | Image / runtime | Ports | Dépendances |
 | :--- | :--- | :--- | :--- |
-| `bens-core` | JVM Spring Boot 4.1 | 8080 | PostgreSQL, Redis, RabbitMQ, BensContract |
+| `bens-core` | **Java 25 LTS**  + Spring Boot 4.1 | 8080 | PostgreSQL, Redis, RabbitMQ, BensContract |
 | `bens-contract` | Rust binary | 8081 | MultiversX (pas de PostgreSQL) |
-| `bens-bridge` | JVM Spring Boot 4.1 | 8082 | RabbitMQ, MultiversX (pas de PostgreSQL) |
+| `bens-bridge` | **Java 25 LTS** + Spring Boot 4.1 | 8082 | RabbitMQ, MultiversX (pas de PostgreSQL) |
 | `postgres` | PostgreSQL 17 | 5432 | Volume `pgdata` |
 | `redis` | Redis 7 | 6379 | — |
 | `rabbitmq` | RabbitMQ 3 + management | 5672 / 15672 | — |
 
-> Dockerisation livrée en **US 5.7** (Sprint 6). En développement local, chaque
-> module tourne hors conteneur avec les mêmes dépendances.
 
 ---
 

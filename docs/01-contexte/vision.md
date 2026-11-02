@@ -2,9 +2,6 @@
 
 # BENS : Blockchain Event Network System
 
-> **Vision produit** — Document de présentation externe et soutenance CDA.
-> Source de vérité technique : [`cahier-des-charges.md`](./cahier-des-charges.md).
-
 **Le middleware qui rend au marché secondaire sa valeur aux organisateurs.**
 
 ## Présentation

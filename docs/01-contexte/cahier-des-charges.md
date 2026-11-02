@@ -1,8 +1,6 @@
 # Cahier des Charges Fonctionnel et Technique — Projet BENS
 
-> **Référence US 1.1** — Documenter l'Expression du Besoin et l'Architecture distribuée  
-> **Architecture détaillée** : `[docs/03-conception/architecture.md](../03-conception/architecture.md)` (US 1.7)  
-> **Principe transverse** : BENS est un *middleware* transmetteur de messages et forgeur de NFT/SBT — **jamais une billetterie bis**. La donnée métier billetterie (catalogue, sièges, prix, panier, checkout) reste chez le partenaire Web2.
+> BENS est un *middleware* transmetteur de messages et forgeur de NFT/SBT — **jamais une billetterie bis**. La donnée métier billetterie (catalogue, sièges, prix, panier, checkout) reste chez le partenaire Web2.
 
 ---
 
@@ -414,7 +412,7 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 
 | Fonctionnalité                | Test de recette                              | Résultat attendu                                                                  | Specs                 |
 | ----------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------- | --------------------- |
-| **Bench de charge**           | k6 : 5 000 clics simultanés sur 1 000 sièges | 1 000 × `200 OK`, 4 000 × `409`, **0 overbooking**, p99 < 2 ms                    | SF-03, NFR-01, NFR-02 |
+| **Bench de charge**           | Campagne de charge : 5 000 clics simultanés sur 1 000 sièges | 1 000 × `200 OK`, 4 000 × `409`, **0 overbooking**, p99 < 2 ms                    | SF-03, NFR-01, NFR-02 |
 | **Crash-test Redis**          | Interruption Redis pendant un drop           | Aucune transaction financière corrompue ; annulation propre des paniers non payés | NFR-04                |
 | **Revente marché secondaire** | Revente entre deux utilisateurs              | Billet réémis, royalties créditées à l'organisateur                               | SF-09, SF-10          |
 
@@ -436,15 +434,15 @@ Tables **propres au middleware** uniquement (détail : `docs/03-conception/mcd/m
 
 ### Anti-patterns à proscrire
 
-- ❌ Écriture synchrone PostgreSQL pendant le verrouillage
-- ❌ Mint synchrone bloquant l'achat € (répondre `202` avant le mint)
-- ❌ RabbitMQ pour le mint (le mint est un appel BensCore → BensContract)
-- ❌ Webhook paiement reçu par BensBridge (c'est BensCore)
-- ❌ Webhook sortant sans UUID de transaction
-- ❌ Slug / nom d'événement dans une clé Redis
-- ❌ Secret / clé privée blockchain en clair (BDD, logs)
-- ❌ Réémission sans vérifier plafond et royalties
-- ❌ Recréer catalogue, plan de sièges, panier, checkout côté BENS
+- Écriture synchrone PostgreSQL pendant le verrouillage
+- Mint synchrone bloquant l'achat € (répondre `202` avant le mint)
+- RabbitMQ pour le mint (le mint est un appel BensCore → BensContract)
+- Webhook paiement reçu par BensBridge (c'est BensCore)
+- Webhook sortant sans UUID de transaction
+- Slug / nom d'événement dans une clé Redis
+- Secret / clé privée blockchain en clair (BDD, logs)
+- Réémission sans vérifier plafond et royalties
+- Recréer catalogue, plan de sièges, panier, checkout côté BENS
 
 ---
 

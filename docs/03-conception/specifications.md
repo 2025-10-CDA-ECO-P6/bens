@@ -1,8 +1,6 @@
 # Spécifications techniques — Projet BENS
 
-> **Architecture** : `[architecture.md](./architecture.md)`  
-> **Cahier des charges** : `[../01-contexte/cahier-des-charges.md](../01-contexte/cahier-des-charges.md)`  
-> **Discipline** : middleware uniquement — pas de catalogue, plan de salle, panier, prix.
+> Middleware uniquement — pas de catalogue, plan de salle, panier, prix.
 
 ---
 
@@ -484,11 +482,11 @@ par BensBridge. Agrégé par le dashboard organisateur.
 ### 9.3. Recette (rappel)
 
 
-| Scénario         | Outil                      | Attendu                                    |
-| ---------------- | -------------------------- | ------------------------------------------ |
-| Bench charge     | k6 5 000 VU / 1 000 sièges | 1 000 × 200, 4 000 × 409, 0 overbooking    |
-| Crash-test Redis | Interruption Redis         | Aucune tx € corrompue                      |
-| Revente          | Transfer on-chain          | Royalty créditée + ligne `SECONDARY_SALES` |
+| Scénario         | Démarche                                      | Attendu                                    |
+| ---------------- | --------------------------------------------- | ------------------------------------------ |
+| Bench charge     | 5 000 utilisateurs virtuels / 1 000 sièges    | 1 000 × 200, 4 000 × 409, 0 overbooking    |
+| Crash-test Redis | Interruption / crash Redis                    | Aucune tx € corrompue                      |
+| Revente          | Transfer on-chain                             | Royalty créditée + ligne `SECONDARY_SALES` |
 
 
 ---

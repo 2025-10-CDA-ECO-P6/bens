@@ -1,10 +1,9 @@
 # Modèle Logique de Données (MLD) — BENS Middleware
 
-> **Référence US 1.2** — Dérivation du MCD en tables relationnelles
-> Clés primaires **UUID**, clés étrangères, contraintes d'**unicité**.
-> SGBD cible : **PostgreSQL 17**.
-> **Argument n°1** : la table `SECONDARY_SALES` trace les royalties perçues
-> sur le marché secondaire (captation de valeur).
+Dérivation du MCD en tables relationnelles. Clés primaires **UUID**, clés
+étrangères, contraintes d'**unicité**. SGBD cible : **PostgreSQL 17**.
+La table `SECONDARY_SALES` trace les royalties perçues sur le marché
+secondaire (captation de valeur).
 
 ---
 

@@ -1,10 +1,9 @@
 # Modèle Conceptuel de Données (MCD) — BENS Middleware
 
-> **Référence US 1.2** — Modélisation conceptuelle et logique (mode Stateless)
-> **Discipline** : structure relationnelle pour l'*auditabilité* et la
-> *configuration* — **sans dupliquer** la base billetterie du partenaire Web2.
-> **Argument n°1** : la **captation de valeur** sur le marché secondaire
-> (royalties ancrées dans le SC, tracées dans `SecondarySale`).
+> Structure relationnelle pour l'*auditabilité* et la *configuration* —
+> **sans dupliquer** la base billetterie du partenaire Web2. La **captation
+> de valeur** sur le marché secondaire (royalties ancrées dans le SC,
+> tracées dans `SecondarySale`) est l'argument n°1.
 
 ---
 
